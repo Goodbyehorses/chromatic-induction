@@ -1,0 +1,2139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Induction Generator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111;
+    font-family: 'DM Mono', monospace;
+    font-weight: 300;
+    padding: 4px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+
+  @media (max-width: 900px) {
+    body { grid-template-columns: repeat(2, 1fr); }
+    #generator { grid-template-columns: 1fr; min-height: auto; }
+    #gen-preview { min-height: 240px; }
+    .boost-swatches { grid-template-columns: repeat(3, 1fr) !important; }
+  }
+  @media (max-width: 520px) {
+    body { grid-template-columns: 1fr; gap: 2px; padding: 2px; }
+    #lb-key { width: 80vw; height: 40vh; }
+  }
+
+  /* ═══════════════════════════════
+     GENERATOR
+     ═══════════════════════════════ */
+  #generator {
+    grid-column: 1 / -1;
+    background: #1A1A1A;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 380px;
+  }
+
+  #gen-preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    cursor: crosshair;
+    height: 100%;
+  }
+  #gen-key {
+    width: 52%; height: 65%;
+    z-index: 2; flex-shrink: 0;
+    position: relative; cursor: crosshair;
+  }
+  #gen-expand {
+    position: absolute;
+    bottom: 16px; right: 16px;
+    width: 36px; height: 36px;
+    background: rgba(0,0,0,0.30);
+    border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 5; color: rgba(255,255,255,0.85); font-size: 14px;
+    transition: background 0.1s;
+  }
+  #gen-expand:hover { background: rgba(0,0,0,0.5); color: #fff; }
+  #gen-expand:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+
+  #gen-controls {
+    padding: 24px 28px 20px;
+    display: flex; flex-direction: column; gap: 0;
+    border-left: 1px solid #242424;
+    overflow-y: auto;
+  }
+  .gen-header {
+    font-size: 12px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #CCC;
+    margin-bottom: 22px;
+  }
+  .ctrl-group { margin-bottom: 20px; }
+  .ctrl-group-label {
+    font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: #999;
+    margin-bottom: 12px; padding-bottom: 7px;
+    border-bottom: 1px solid #3A3A3A;
+  }
+
+  /* Each slider row */
+  .ctrl-row {
+    display: grid;
+    grid-template-columns: 64px 1fr 44px;
+    align-items: center; gap: 12px;
+    margin-bottom: 10px;
+    min-height: 36px; /* big enough touch target around the row */
+  }
+  .ctrl-row label {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: #BBB;
+    user-select: none;
+  }
+
+  /* Track */
+  .ctrl-row input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px;
+    background: #2E2E2E;
+    border-radius: 0;
+    outline: none; cursor: pointer;
+    /* big invisible hit area above/below */
+    padding: 10px 0;
+    background-clip: content-box;
+  }
+  .ctrl-row input[type=range]:focus {
+    outline: 3px solid #4A9EFF;
+    outline-offset: 4px;
+  }
+  /* Thumb */
+  .ctrl-row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    background: #888;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background 0.1s, transform 0.1s;
+  }
+  .ctrl-row input[type=range]:hover::-webkit-slider-thumb,
+  .ctrl-row input[type=range]:focus::-webkit-slider-thumb {
+    background: #DDD;
+    transform: scaleX(1.15);
+  }
+  .ctrl-row input[type=range]::-moz-range-thumb {
+    width: 18px; height: 18px;
+    background: #888; border: none; border-radius: 0; cursor: pointer;
+  }
+  .ctrl-row input[type=range]:hover::-moz-range-thumb { background: #DDD; }
+
+  /* Value readout — always readable */
+  .ctrl-val {
+    font-size: 12px;
+    color: #DDD;
+    letter-spacing: 0.04em;
+    text-align: right;
+    white-space: nowrap;
+    min-width: 40px;
+  }
+
+  /* Color output row */
+  .gen-swatch-row {
+    display: flex; gap: 12px; align-items: center;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: #141414;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .gen-swatch-row:hover { background: #1E1E1E; }
+  .gen-swatch-row:focus { outline: 3px solid #4A9EFF; outline-offset: -3px; }
+  .gen-swatch { width: 32px; height: 32px; flex-shrink: 0; }
+  .gen-swatch-info { display: flex; flex-direction: column; gap: 4px; }
+  .gen-swatch-hex {
+    font-size: 12px; letter-spacing: 0.08em; color: #DDD;
+  }
+  .gen-swatch-hsl { font-size: 11px; letter-spacing: 0.06em; color: #999; }
+
+  #gen-add {
+    margin-top: auto; padding: 14px 0;
+    background: #252525; border: none;
+    color: #CCC; font-family: 'DM Mono', monospace;
+    font-size: 12px; letter-spacing: 0.2em;
+    text-transform: uppercase; cursor: pointer; width: 100%;
+    transition: background 0.1s, color 0.1s;
+  }
+  #gen-add:hover { background: #333; color: #FFF; }
+  #gen-add:focus { outline: 3px solid #4A9EFF; outline-offset: -3px; }
+
+  /* Settings toggles */
+  .setting-row {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px; min-height: 32px;
+  }
+  .setting-label { font-size: 12px; letter-spacing: 0.04em; color: #BBB; }
+  .setting-note  { font-size: 11px; letter-spacing: 0.04em; color: #888; margin-top: 2px; }
+  .toggle {
+    padding: 6px 14px;
+    background: #222; border: 1px solid #444;
+    color: #AAA; font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.15em;
+    cursor: pointer; min-width: 52px; text-align: center;
+    transition: all 0.1s;
+  }
+  .toggle:hover { border-color: #777; color: #DDD; }
+  .toggle.on { background: #1E2A1E; border-color: #5A8A5A; color: #9ECA9E; }
+  .toggle:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+
+  /* H-K badge in preview */
+  #hk-badge {
+    display: none; position: absolute;
+    top: 16px; left: 16px;
+    font-size: 11px; letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.9); z-index: 4;
+    background: rgba(0,0,0,0.28); padding: 5px 10px;
+    pointer-events: none;
+  }
+
+  /* Boost palette — sits below generator, full width */
+  #boost-panel {
+    display: none;
+    grid-column: 1 / -1;
+    background: #161616;
+    border-top: 1px solid #1E1E1E;
+    padding: 18px 20px 20px;
+  }
+  #boost-panel.visible { display: block; }
+  .boost-header {
+    font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: #999; margin-bottom: 14px;
+  }
+  .boost-swatches {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+  }
+  .boost-swatch {
+    position: relative; height: 130px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden;
+    outline: 2px solid transparent;
+    transition: outline-color 0.1s;
+  }
+  .boost-swatch:hover  { outline-color: rgba(255,255,255,0.2); }
+  .boost-swatch.active { outline-color: rgba(255,255,255,0.75); }
+  .boost-swatch-key {
+    width: 44%; height: 62%;
+    flex-shrink: 0; pointer-events: none;
+  }
+  .boost-meta {
+    position: absolute; bottom: 9px; left: 10px;
+    pointer-events: none;
+  }
+  .boost-angle {
+    font-size: 12px; letter-spacing: 0.04em;
+    color: rgba(0,0,0,0.72); display: block; line-height: 1.3;
+  }
+  .boost-type {
+    font-size: 11px; letter-spacing: 0.08em;
+    color: rgba(0,0,0,0.55); display: block;
+    font-style: italic; margin-top: 1px;
+  }
+  .boost-copy {
+    position: absolute; top: 9px; right: 9px;
+    font-size: 11px; letter-spacing: 0.08em;
+    color: rgba(0,0,0,0.55); pointer-events: none;
+  }
+  .boost-swatch:hover .boost-copy { color: rgba(0,0,0,0.75); }
+
+  /* ═══════════════════════════════
+     PAIR CARDS
+     ═══════════════════════════════ */
+  .pair {
+    position: relative; height: 340px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; cursor: crosshair;
+  }
+  .key-block {
+    width: 54%; height: 68%;
+    z-index: 2; flex-shrink: 0;
+    position: relative; cursor: crosshair;
+  }
+  .meta {
+    position: absolute; bottom: 14px; left: 14px;
+    z-index: 3; display: flex; flex-direction: column; gap: 5px;
+  }
+  .meta span {
+    font-size: 10px; letter-spacing: 0.12em; line-height: 1;
+    display: flex; align-items: center; gap: 5px;
+    color: rgba(0,0,0,0.55);
+  }
+  .meta span.k { color: rgba(0,0,0,0.75); }
+  .sw { width: 8px; height: 8px; flex-shrink: 0; display: inline-block; }
+  .n {
+    position: absolute; top: 13px; left: 14px;
+    font-size: 10px; letter-spacing: 0.3em;
+    z-index: 3; color: rgba(0,0,0,0.45);
+  }
+  .lbl {
+    position: absolute; top: 13px; right: 14px;
+    font-size: 10px; letter-spacing: 0.16em;
+    z-index: 3; color: rgba(0,0,0,0.45);
+    text-align: right; font-style: italic;
+  }
+  .expand-btn {
+    position: absolute; bottom: 14px; right: 14px;
+    width: 24px; height: 24px;
+    background: rgba(0,0,0,0.22); border: none;
+    cursor: pointer; z-index: 4;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(0,0,0,0.65); font-size: 12px;
+  }
+  .expand-btn:hover { background: rgba(0,0,0,0.35); color: rgba(0,0,0,0.85); }
+  .expand-btn:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+
+  /* ═══════════════════════════════
+     LIGHTBOX
+     ═══════════════════════════════ */
+  #lightbox {
+    display: none; position: fixed; inset: 0;
+    z-index: 9000; align-items: center; justify-content: center;
+  }
+  #lightbox.open { display: flex; }
+  #lb-bg {
+    position: absolute; inset: 0; z-index: 1; cursor: pointer;
+  }
+  #lb-key {
+    width: 44vw; height: 56vh;
+    z-index: 2; flex-shrink: 0; cursor: crosshair;
+    position: relative;
+  }
+  #lb-close {
+    position: fixed; top: 24px; right: 28px;
+    background: rgba(0,0,0,0.22); border: none; cursor: pointer;
+    color: rgba(0,0,0,0.75); font-family: 'DM Mono', monospace;
+    font-size: 12px; letter-spacing: 0.2em; padding: 9px 16px; z-index: 10;
+  }
+  #lb-close:hover { color: rgba(0,0,0,0.95); background: rgba(0,0,0,0.32); }
+  #lb-close:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+  #lb-info {
+    position: fixed; bottom: 28px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 24px; z-index: 10;
+  }
+  .lb-color { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .lb-swatch { width: 12px; height: 12px; }
+  .lb-hex { font-size: 12px; letter-spacing: 0.14em; color: rgba(0,0,0,0.65); }
+  .lb-color:hover .lb-hex { color: rgba(0,0,0,0.85); }
+  .lb-color:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+
+  /* ═══════════════════════════════
+     TOAST
+     ═══════════════════════════════ */
+  #toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    background: #2A2A2A; color: #DDD;
+    padding: 10px 20px; font-size: 12px; letter-spacing: 0.16em;
+    pointer-events: none; opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 9999; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ═══════════════════════════════
+     TOP NAV
+     ═══════════════════════════════ */
+  #top-nav {
+    grid-column: 1 / -1;
+    background: #141414;
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid #1E1E1E;
+  }
+  #top-nav .site-title {
+    font-size: 11px; letter-spacing: 0.32em;
+    text-transform: uppercase; color: #AAA;
+  }
+  #top-nav a {
+    font-size: 11px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #AAA;
+    text-decoration: none; padding: 6px 14px;
+    border: 1px solid #555;
+    transition: color 0.1s, border-color 0.1s;
+  }
+  #top-nav a:hover { color: #EEE; border-color: #999; }
+  #space-hint {
+    font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: #888;
+  }
+  #space-hint.flash { color: #9ECA9E; transition: color 0s; }
+
+  /* ═══════════════════════════════
+     RESEARCH SECTION (scoped)
+     ═══════════════════════════════ */
+  #research {
+    grid-column: 1 / -1;
+    background: #F0EDE4;
+    scroll-margin-top: 0;
+  }
+  #research-inner {
+    font-family: 'DM Mono', monospace;
+    font-weight: 300;
+    color: #1A1A18;
+    padding: 72px 64px;
+    max-width: 980px;
+    margin: 0 auto;
+    line-height: 1.7;
+  }
+  #research .r-eyebrow {
+    font-size: 11px; letter-spacing: 0.32em;
+    text-transform: uppercase; color: #5E5E58;
+    margin-bottom: 8px;
+  }
+  #research h1 {
+    font-size: 30px; font-weight: 300;
+    line-height: 1.15; letter-spacing: -0.01em;
+    margin-bottom: 10px; color: #1A1A18;
+  }
+  #research .r-intro {
+    font-size: 13px; color: #55554C;
+    letter-spacing: 0.03em; max-width: 620px;
+    line-height: 1.8; margin-bottom: 56px;
+    padding-bottom: 48px; border-bottom: 1px solid #D4D0C4;
+  }
+  #research h2 {
+    font-size: 11px; letter-spacing: 0.32em;
+    text-transform: uppercase; color: #5E5E58;
+    margin-bottom: 20px; padding-bottom: 10px;
+    border-bottom: 1px solid #D4D0C4;
+    font-weight: 300;
+  }
+  #research .r-section { margin-bottom: 52px; }
+  #research p { font-size: 13px; line-height: 1.85; color: #44443C; margin-bottom: 14px; }
+  #research p strong { color: #1A1A18; font-weight: 400; }
+  #research p em { color: #FF2800; font-style: normal; }
+
+  @media (max-width: 900px) {
+    #research-inner { padding: 48px 28px; }
+    #research .mechanisms { grid-template-columns: repeat(2,1fr) !important; }
+    #research .angle-grid,
+    #research .strat-grid { grid-template-columns: 1fr !important; }
+    #research .spatial { grid-template-columns: repeat(2,1fr) !important; }
+    #research .m-table { font-size: 8.5px; }
+  }
+  @media (max-width: 520px) {
+    #research-inner { padding: 32px 16px; }
+    #research .mechanisms,
+    #research .spatial { grid-template-columns: 1fr !important; }
+    #research h1 { font-size: 22px; }
+  }
+
+  #research .finding {
+    background: #1A1A18; color: #B8B4A8;
+    padding: 32px 36px; margin: 32px 0;
+    font-size: 10.5px; line-height: 1.85;
+  }
+  #research .finding strong { color: #F0EDE4; font-weight: 400; }
+  #research .finding-label {
+    font-size: 11px; letter-spacing: 0.38em;
+    text-transform: uppercase; color: #999;
+    margin-bottom: 12px;
+  }
+
+  #research .mechanisms {
+    display: grid; grid-template-columns: repeat(5,1fr);
+    gap: 2px; margin-bottom: 4px;
+  }
+  #research .mech {
+    padding: 22px 18px; background: #E6E2D8; position: relative;
+  }
+  #research .mech-num { font-size: 11px; color: #5E5E58; letter-spacing: 0.2em; margin-bottom: 10px; }
+  #research .mech-name { font-size: 11px; color: #1A1A18; letter-spacing: 0.04em; margin-bottom: 8px; line-height: 1.4; }
+  #research .mech-gain { font-size: 18px; font-weight: 400; color: #1A1A18; margin-bottom: 6px; line-height: 1; }
+  #research .mech-desc { font-size: 11px; color: #5E5E58; line-height: 1.6; }
+  #research .mech.accent { background: #1A1A18; }
+  #research .mech.accent .mech-num,
+  #research .mech.accent .mech-desc { color: #999; }
+  #research .mech.accent .mech-name,
+  #research .mech.accent .mech-gain { color: #F0EDE4; }
+  #research .mech-source { font-size: 10px; color: #5E5E58; letter-spacing: 0.08em; margin-top: 8px; font-style: italic; }
+  #research .mech.accent .mech-source { color: #777; }
+
+  #research .angle-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 2px; margin: 16px 0 32px;
+  }
+  #research .angle-block { padding: 24px; background: #E6E2D8; }
+  #research .angle-label { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #5E5E58; margin-bottom: 12px; }
+  #research .angle-val { font-size: 28px; font-weight: 400; margin-bottom: 6px; line-height: 1; }
+  #research .angle-block p { margin-bottom: 0; }
+
+  #research .m-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  #research .m-table th {
+    text-align: left; font-weight: 400; font-size: 11px;
+    letter-spacing: 0.18em; text-transform: uppercase; color: #5E5E58;
+    padding: 8px 12px 8px 0; border-bottom: 1px solid #D4D0C4;
+  }
+  #research .m-table td {
+    padding: 10px 12px 10px 0; border-bottom: 1px solid #D4D0C4;
+    vertical-align: middle; letter-spacing: 0.04em; color: #1A1A18;
+  }
+  #research .m-table tr:last-child td { border-bottom: none; }
+  #research .chip { display: inline-block; width: 24px; height: 24px; vertical-align: middle; margin-right: 10px; }
+  #research .tag { display: inline-block; background: #1A1A18; color: #F0EDE4; padding: 3px 8px; font-size: 11px; letter-spacing: 0.06em; }
+  #research .hk-high { color: #C04000; font-size: 11px; }
+  #research .hk-low  { color: #6D6D65; font-size: 11px; }
+
+  #research .strat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 16px 0; }
+  #research .strat { padding: 28px; background: #E6E2D8; }
+  #research .strat.dark-strat { background: #1A1A18; }
+  #research .strat-label { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #5E5E58; margin-bottom: 14px; }
+  #research .strat.dark-strat .strat-label { color: #888; }
+  #research .strat-name { font-size: 14px; color: #1A1A18; margin-bottom: 12px; line-height: 1.3; }
+  #research .strat.dark-strat .strat-name { color: #F0EDE4; }
+  #research .strat p { margin-bottom: 6px; }
+  #research .strat.dark-strat p { color: #999; }
+  #research .strat-verdict { margin-top: 16px; font-size: 8.5px; letter-spacing: 0.1em; padding: 8px 12px; background: rgba(0,0,0,0.06); color: #1A1A18; }
+  #research .strat.dark-strat .strat-verdict { background: rgba(255,255,255,0.06); color: #888; }
+
+  #research .spatial { display: grid; grid-template-columns: repeat(4,1fr); gap: 2px; margin: 16px 0; }
+  #research .sp-block { padding: 20px 18px; background: #E6E2D8; }
+  #research .sp-label { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #5E5E58; margin-bottom: 10px; }
+  #research .sp-val { font-size: 22px; font-weight: 400; color: #1A1A18; margin-bottom: 6px; line-height: 1; }
+  #research .sp-desc { font-size: 11px; color: #5E5E58; line-height: 1.6; }
+
+  #research .steps { list-style: none; counter-reset: step; }
+  #research .steps li {
+    counter-increment: step; display: grid;
+    grid-template-columns: 48px 1fr; gap: 20px;
+    padding: 20px 0; border-bottom: 1px solid #D4D0C4; align-items: start;
+  }
+  #research .steps li::before { content: "0" counter(step); font-size: 11px; letter-spacing: 0.15em; color: #5E5E58; padding-top: 2px; }
+  #research .steps li div { font-size: 13px; line-height: 1.75; color: #44443C; }
+  #research .steps li div strong { color: #1A1A18; font-weight: 400; }
+  #research .steps li div em { color: #FF2800; font-style: normal; }
+
+  #research .code-block {
+    background: #E6E2D8; padding: 28px 32px;
+    font-size: 12px; line-height: 2; letter-spacing: 0.02em;
+    white-space: pre; overflow-x: auto; color: #1A1A18;
+    tab-size: 2; margin: 16px 0;
+    /* Prevent pre from leaking into siblings via inheritance */
+    contain: style;
+  }
+  #research .c-comment { color: #7A7A70; }
+  #research .c-prop { color: #2050A0; }
+  #research .c-val { color: #A04020; }
+  #research .c-fn { color: #204060; }
+
+  #research .kills { list-style: none; }
+  #research .kills li {
+    display: grid; grid-template-columns: 24px 1fr; gap: 12px;
+    padding: 14px 0; border-bottom: 1px solid #D4D0C4;
+    align-items: start;
+  }
+  #research .kills li > div {
+    font-size: 13px; color: #44443C; line-height: 1.7;
+    white-space: normal; word-wrap: break-word;
+  }
+  #research .kills li::before { content: "×"; color: #B03020; font-size: 14px; padding-top: 2px; }
+  #research .kills li strong { color: #1A1A18; font-weight: 400; }
+
+  #research .refs { list-style: none; }
+  #research .refs li {
+    padding: 10px 0; border-bottom: 1px solid #D4D0C4;
+  }
+  #research .refs li > div {
+    font-size: 11px; color: #5E5E58; letter-spacing: 0.02em; line-height: 1.75;
+    white-space: normal; word-wrap: break-word;
+  }
+  #research .refs li strong { color: #55554C; font-weight: 400; }
+  #research .refs li em { font-style: italic; }
+
+  /* Reset white-space globally within research — code-block sets pre and it inherits */
+  #research .r-section,
+  #research p,
+  #research .steps li div,
+  #research .mech-desc,
+  #research .sp-desc,
+  #research .strat p,
+  #research .angle-block p,
+  #research .finding { white-space: normal; word-wrap: break-word; }
+
+  #research .r-footer {
+    margin-top: 72px; padding-top: 20px;
+    border-top: 1px solid #D4D0C4;
+    font-size: 11px; color: #6D6D65; letter-spacing: 0.12em;
+    display: flex; justify-content: space-between;
+  }
+
+  #research .demo-grid {
+    display: grid; grid-template-columns: repeat(4,1fr);
+    gap: 3px; margin: 16px 0 32px;
+  }
+  #research .demo-pair {
+    height: 200px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #research .demo-key { width: 50%; height: 62%; z-index: 2; }
+  #research .demo-label {
+    position: absolute; bottom: 10px; left: 12px;
+    font-size: 11px; letter-spacing: 0.1em;
+    color: rgba(0,0,0,0.6); z-index: 3;
+  }
+
+  /* Preset pills */
+  .preset-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px;
+    background: #1A1A18;
+    color: #D8D4C8;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.1em;
+    border: none; cursor: pointer;
+    text-decoration: none;
+    transition: background 0.1s, color 0.1s;
+    vertical-align: middle;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+  .preset-pill:hover { background: #333; color: #EEE; }
+  .preset-pill:focus { outline: 2px solid #888; outline-offset: 2px; }
+  .preset-pill.fired { background: #3A3A38; color: #EEE; }
+
+  /* ═══════════════════════════════
+     NAV EXTENSIONS
+     ═══════════════════════════════ */
+  .nav-group { display: flex; align-items: center; gap: 8px; }
+  #btn-anim {
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #AAA; background: none; border: none; cursor: pointer;
+    padding: 6px 10px; font-family: 'DM Mono', monospace;
+    transition: color 0.1s;
+  }
+  #btn-anim:hover { color: #EEE; }
+  #btn-anim:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+  #btn-anim.playing { color: #9ECA9E; }
+  #anim-speed { display: none; gap: 3px; }
+  #anim-speed.visible { display: flex; }
+  .anim-spd {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #999; background: none; border: 1px solid #444;
+    padding: 4px 8px; cursor: pointer; font-family: 'DM Mono', monospace;
+    transition: all 0.1s;
+  }
+  .anim-spd:hover { color: #DDD; border-color: #777; }
+  .anim-spd:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+  .anim-spd.active { color: #9ECA9E; border-color: #5A8A5A; background: #1E2A1E; }
+
+  /* ═══════════════════════════════
+     REFINE BUTTON
+     ═══════════════════════════════ */
+  #btn-refine {
+    padding: 6px 12px;
+    background: #1A1A1A; border: 1px solid #555;
+    color: #AAA; font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em;
+    cursor: pointer; transition: all 0.1s;
+  }
+  #btn-refine:hover { border-color: #5A8A5A; color: #9ECA9E; background: #1E2A1E; }
+  #btn-refine:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+
+  /* ═══════════════════════════════
+     GEN FOOTER
+     ═══════════════════════════════ */
+  #gen-footer { display: flex; gap: 4px; margin-top: auto; }
+  #gen-footer #gen-add {
+    flex: 1; margin-top: 0;
+    padding: 14px 0;
+    background: #252525; border: none;
+    color: #CCC; font-family: 'DM Mono', monospace;
+    font-size: 12px; letter-spacing: 0.2em;
+    text-transform: uppercase; cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  #gen-footer #gen-add:hover { background: #333; color: #FFF; }
+  #btn-export-open {
+    padding: 14px 16px;
+    background: #1E1E1E; border: none;
+    color: #AAA; font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase; cursor: pointer;
+    transition: all 0.1s; white-space: nowrap;
+  }
+  #btn-export-open:hover { background: #2E2E2E; color: #EEE; }
+  #btn-export-open:focus { outline: 3px solid #4A9EFF; outline-offset: -3px; }
+
+  /* ═══════════════════════════════
+     SCORE BAR
+     ═══════════════════════════════ */
+  #score-bar {
+    margin-top: 16px; padding-top: 14px;
+    border-top: 1px solid #3A3A3A;
+  }
+  #score-label {
+    font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #999; margin-bottom: 9px;
+  }
+  .score-mechs { display: flex; flex-direction: column; gap: 6px; }
+  .score-mech {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: 0.04em; color: #666;
+    transition: color 0.18s;
+  }
+  .score-mech.active { color: #7AB47A; }
+  .score-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #444; flex-shrink: 0; transition: background 0.18s;
+  }
+  .score-mech.active .score-dot { background: #5A8A5A; }
+
+  /* ═══════════════════════════════
+     HUE WHEEL
+     ═══════════════════════════════ */
+  #hue-wheel {
+    position: absolute; bottom: 58px; right: 16px;
+    width: 52px; height: 52px; border-radius: 50%;
+    background: conic-gradient(
+      hsl(0,80%,58%), hsl(30,90%,58%), hsl(60,85%,60%),
+      hsl(90,75%,50%), hsl(120,72%,42%), hsl(150,72%,44%),
+      hsl(180,72%,48%), hsl(210,80%,54%), hsl(240,80%,60%),
+      hsl(270,80%,58%), hsl(300,75%,55%), hsl(330,80%,56%),
+      hsl(360,80%,58%)
+    );
+    cursor: crosshair; z-index: 4;
+    box-shadow: 0 0 0 1.5px rgba(0,0,0,0.6);
+    touch-action: none;
+    /* dark center hole */
+  }
+  #hue-wheel::after {
+    content: ''; position: absolute;
+    inset: 30%; border-radius: 50%;
+    background: rgba(10,10,10,0.65);
+    pointer-events: none;
+  }
+  #hue-wheel-dot {
+    position: absolute; width: 8px; height: 8px;
+    background: #fff; border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.7);
+    pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+  #hue-wheel-dot2 {
+    position: absolute; width: 6px; height: 6px;
+    background: rgba(255,255,255,0.38); border-radius: 50%;
+    border: 1.5px solid rgba(0,0,0,0.4); pointer-events: none;
+  }
+
+  /* ═══════════════════════════════
+     PATTERN STRIP
+     ═══════════════════════════════ */
+  #pattern-strip {
+    display: none;
+    grid-column: 1 / -1;
+    background: #0E0E0E;
+    border-top: 1px solid #1A1A1A;
+    padding: 16px 20px 20px;
+  }
+  #pattern-strip.visible { display: block; }
+  .pattern-strip-header {
+    font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase;
+    color: #999; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .pattern-strip-header em {
+    font-style: normal; color: #777; letter-spacing: 0.08em;
+    font-size: 11px;
+  }
+  .pattern-tiles {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 3px;
+  }
+  @media (max-width: 900px) { .pattern-tiles { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 520px) { .pattern-tiles { grid-template-columns: repeat(2, 1fr); } }
+  .pattern-tile {
+    position: relative; height: 110px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden;
+    outline: 2px solid transparent; transition: outline-color 0.1s;
+  }
+  .pattern-tile:hover  { outline-color: rgba(255,255,255,0.18); }
+  .pattern-tile.active { outline-color: rgba(255,255,255,0.65); }
+
+  /* ═══════════════════════════════
+     EXPORT MODAL
+     ═══════════════════════════════ */
+  #export-modal {
+    display: none; position: fixed; inset: 0;
+    z-index: 8500; background: rgba(0,0,0,0.78);
+    align-items: center; justify-content: center;
+  }
+  #export-modal.open { display: flex; }
+  #export-box {
+    background: #161616; width: min(540px, 92vw);
+    max-height: 82vh; overflow-y: auto;
+    border: 1px solid #242424; padding: 32px 34px;
+    position: relative;
+  }
+  #export-close {
+    position: absolute; top: 16px; right: 18px;
+    background: none; border: none; color: #999;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    letter-spacing: 0.2em; cursor: pointer; transition: color 0.1s;
+  }
+  #export-close:hover { color: #EEE; }
+  #export-close:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+  .export-title {
+    font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: #CCC; margin-bottom: 26px;
+  }
+  .export-section { margin-bottom: 24px; }
+  .export-section-label {
+    font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase;
+    color: #999; margin-bottom: 9px; padding-bottom: 7px;
+    border-bottom: 1px solid #3A3A3A;
+  }
+  .export-code {
+    background: #101010; padding: 13px 15px;
+    font-size: 12px; line-height: 1.95; letter-spacing: 0.03em;
+    color: #AAA; white-space: pre; overflow-x: auto;
+    font-family: 'DM Mono', monospace; margin-bottom: 8px;
+  }
+  .export-code .ev { color: #9ECA9E; }
+  .export-code .ek { color: #DDD; }
+  .export-btn {
+    padding: 7px 15px; background: #1E1E1E; border: 1px solid #444;
+    color: #AAA; font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.1s;
+  }
+  .export-btn:hover { background: #2A2A2A; color: #EEE; border-color: #666; }
+  .export-btn:focus { outline: 3px solid #4A9EFF; outline-offset: 2px; }
+  #ex-download {
+    width: 100%; margin-top: 6px; padding: 11px 0;
+    background: #1A1A1A; border: none; border-top: 1px solid #3A3A3A;
+    color: #AAA; font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.1s;
+  }
+  #ex-download:hover { background: #252525; color: #EEE; }
+  #ex-download:focus { outline: 3px solid #4A9EFF; outline-offset: -3px; }
+  /* Skip nav link */
+  .skip-nav {
+    position: absolute; top: -999px; left: -999px;
+    background: #4A9EFF; color: #000;
+    padding: 8px 16px; font-size: 13px;
+    font-family: 'DM Mono', monospace; z-index: 99999;
+    text-decoration: none;
+  }
+  .skip-nav:focus { top: 8px; left: 8px; }
+</style>
+</head>
+<body>
+<a class="skip-nav" href="#generator">Skip to generator</a>
+
+<!-- NAV -->
+<div id="top-nav">
+  <span class="site-title">Chromatic Induction Generator</span>
+  <div class="nav-group">
+    <button id="btn-anim">▶ animate</button>
+    <div id="anim-speed">
+      <button class="anim-spd active" data-speed="slow">slow</button>
+      <button class="anim-spd" data-speed="med">med</button>
+      <button class="anim-spd" data-speed="fast">fast</button>
+    </div>
+    <span id="space-hint">space — random</span>
+  </div>
+  <a href="#research">Research &amp; Recipe ↓</a>
+</div>
+
+<!-- GENERATOR -->
+<div id="generator">
+  <div id="gen-preview">
+    <div id="hk-badge"></div>
+    <div id="gen-key"></div>
+    <div id="hue-wheel">
+      <div id="hue-wheel-dot"></div>
+      <div id="hue-wheel-dot2"></div>
+    </div>
+    <button id="gen-expand" aria-label="Expand preview fullscreen">⤢</button>
+  </div>
+  <div id="gen-controls">
+    <div class="gen-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+      <span>Generate pair</span>
+      <button id="btn-refine" aria-label="Refine: generate a variation of the current pair">⊕ refine</button>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Key color</div>
+      <div class="ctrl-row"><label for="kH">Hue</label><input type="range" id="kH" min="0" max="360" value="8"><span class="ctrl-val" id="kH-v">8°</span></div>
+      <div class="ctrl-row"><label for="kS">Sat</label><input type="range" id="kS" min="0" max="100" value="100"><span class="ctrl-val" id="kS-v">100%</span></div>
+      <div class="ctrl-row"><label for="kL">Light</label><input type="range" id="kL" min="0" max="100" value="52"><span class="ctrl-val" id="kL-v">52%</span></div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Background</div>
+      <div class="ctrl-row"><label for="bgO">Offset</label><input type="range" id="bgO" min="0" max="360" value="180"><span class="ctrl-val" id="bgO-v">180°</span></div>
+      <div class="ctrl-row"><label for="bgS">Sat</label><input type="range" id="bgS" min="0" max="60" value="32"><span class="ctrl-val" id="bgS-v">32%</span></div>
+      <div class="ctrl-row"><label for="bgL">Light</label><input type="range" id="bgL" min="10" max="90" value="62"><span class="ctrl-val" id="bgL-v">62%</span></div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Settings</div>
+      <div class="setting-row">
+        <div><div class="setting-label">OKLCH complements</div><div class="setting-note">Perceptually accurate offset — not HSL</div></div>
+        <button class="toggle" data-s="oklch" aria-pressed="false">Off</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Munsell home L</div><div class="setting-note">Auto-sets lightness per hue family</div></div>
+        <button class="toggle" data-s="munsell" aria-pressed="false">Off</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">H-K indicator</div><div class="setting-note">Show Helmholtz-Kohlrausch boost rating</div></div>
+        <button class="toggle" data-s="hk" aria-pressed="false">Off</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">P3 output</div><div class="setting-note">Expand chroma into Display P3 gamut</div></div>
+        <button class="toggle" data-s="p3" aria-pressed="false">Off</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Boost palette</div><div class="setting-note">Show hue offset angles + induction type</div></div>
+        <button class="toggle" data-s="boost" aria-pressed="false">Off</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Pattern strip</div><div class="setting-note">Show background pattern comparison</div></div>
+        <button class="toggle on" data-s="pattern" aria-pressed="true">On</button>
+      </div>
+    </div>
+
+    <div class="gen-swatch-row" id="g-bg-row" title="Click to copy" role="button" tabindex="0" aria-label="Copy background color">
+      <div class="gen-swatch" id="g-bg-sw"></div>
+      <div class="gen-swatch-info">
+        <span class="gen-swatch-hex" id="g-bg-hex">—</span>
+        <span class="gen-swatch-hsl" id="g-bg-hsl">background</span>
+      </div>
+    </div>
+    <div class="gen-swatch-row" id="g-key-row" title="Click to copy" role="button" tabindex="0" aria-label="Copy key color">
+      <div class="gen-swatch" id="g-key-sw"></div>
+      <div class="gen-swatch-info">
+        <span class="gen-swatch-hex" id="g-key-hex">—</span>
+        <span class="gen-swatch-hsl" id="g-key-hsl">key color</span>
+      </div>
+    </div>
+
+    <div id="score-bar">
+      <div id="score-label">0/5 mechanisms</div>
+      <div class="score-mechs" id="score-mechs"></div>
+    </div>
+
+    <div id="gen-footer">
+      <button id="gen-add">+ Add to palette</button>
+      <button id="btn-export-open" aria-label="Open export options">↗ Export</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOOST PALETTE -->
+<div id="boost-panel">
+  <div class="boost-header">Boost palette — offset angles from key hue</div>
+  <div class="boost-swatches" id="boost-swatches"></div>
+</div>
+
+<!-- PATTERN STRIP -->
+<div id="pattern-strip" class="visible">
+  <div class="pattern-strip-header">
+    Pattern lab <em>— how textured surrounds affect chromatic induction</em>
+  </div>
+  <div class="pattern-tiles" id="pattern-tiles"></div>
+</div>
+
+<!-- PAIRS -->
+<div class="pair" style="background:hsl(175,32%,62%);"><span class="n">01</span><span class="lbl">coral fire</span><div class="key-block" style="background:hsl(8,100%,52%);"></div><div class="meta"><span><span class="sw" style="background:hsl(175,32%,62%)"></span>hsl(175,32,62)</span><span class="k"><span class="sw" style="background:hsl(8,100%,52%)"></span>hsl(8,100,52)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(180,30%,60%);"><span class="n">02</span><span class="lbl">vermillion</span><div class="key-block" style="background:hsl(14,100%,50%);"></div><div class="meta"><span><span class="sw" style="background:hsl(180,30%,60%)"></span>hsl(180,30,60)</span><span class="k"><span class="sw" style="background:hsl(14,100%,50%)"></span>hsl(14,100,50)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(250,28%,63%);"><span class="n">03</span><span class="lbl">pure red</span><div class="key-block" style="background:hsl(0,100%,50%);"></div><div class="meta"><span><span class="sw" style="background:hsl(250,28%,63%)"></span>hsl(250,28,63)</span><span class="k"><span class="sw" style="background:hsl(0,100%,50%)"></span>hsl(0,100,50)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(178,34%,59%);"><span class="n">04</span><span class="lbl">canyon fire</span><div class="key-block" style="background:hsl(18,96%,50%);"></div><div class="meta"><span><span class="sw" style="background:hsl(178,34%,59%)"></span>hsl(178,34,59)</span><span class="k"><span class="sw" style="background:hsl(18,96%,50%)"></span>hsl(18,96,50)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(28,34%,62%);"><span class="n">05</span><span class="lbl">arctic blast</span><div class="key-block" style="background:hsl(188,100%,48%);"></div><div class="meta"><span><span class="sw" style="background:hsl(28,34%,62%)"></span>hsl(28,34,62)</span><span class="k"><span class="sw" style="background:hsl(188,100%,48%)"></span>hsl(188,100,48)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(22,32%,61%);"><span class="n">06</span><span class="lbl">ice signal</span><div class="key-block" style="background:hsl(200,100%,50%);"></div><div class="meta"><span><span class="sw" style="background:hsl(22,32%,61%)"></span>hsl(22,32,61)</span><span class="k"><span class="sw" style="background:hsl(200,100%,50%)"></span>hsl(200,100,50)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(32,34%,62%);"><span class="n">07</span><span class="lbl">denim charge</span><div class="key-block" style="background:hsl(218,90%,52%);"></div><div class="meta"><span><span class="sw" style="background:hsl(32,34%,62%)"></span>hsl(32,34,62)</span><span class="k"><span class="sw" style="background:hsl(218,90%,52%)"></span>hsl(218,90,52)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(20,36%,60%);"><span class="n">08</span><span class="lbl">powder charge</span><div class="key-block" style="background:hsl(206,88%,60%);"></div><div class="meta"><span><span class="sw" style="background:hsl(20,36%,60%)"></span>hsl(20,36,60)</span><span class="k"><span class="sw" style="background:hsl(206,88%,60%)"></span>hsl(206,88,60)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(300,28%,62%);"><span class="n">09</span><span class="lbl">acid</span><div class="key-block" style="background:hsl(78,100%,48%);"></div><div class="meta"><span><span class="sw" style="background:hsl(300,28%,62%)"></span>hsl(300,28,62)</span><span class="k"><span class="sw" style="background:hsl(78,100%,48%)"></span>hsl(78,100,48)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(345,30%,61%);"><span class="n">10</span><span class="lbl">nordic field</span><div class="key-block" style="background:hsl(145,88%,42%);"></div><div class="meta"><span><span class="sw" style="background:hsl(345,30%,61%)"></span>hsl(345,30,61)</span><span class="k"><span class="sw" style="background:hsl(145,88%,42%)"></span>hsl(145,88,42)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(348,32%,60%);"><span class="n">11</span><span class="lbl">mint charge</span><div class="key-block" style="background:hsl(162,90%,46%);"></div><div class="meta"><span><span class="sw" style="background:hsl(348,32%,60%)"></span>hsl(348,32,60)</span><span class="k"><span class="sw" style="background:hsl(162,90%,46%)"></span>hsl(162,90,46)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(338,30%,60%);"><span class="n">12</span><span class="lbl">fen signal</span><div class="key-block" style="background:hsl(98,84%,40%);"></div><div class="meta"><span><span class="sw" style="background:hsl(338,30%,60%)"></span>hsl(338,30,60)</span><span class="k"><span class="sw" style="background:hsl(98,84%,40%)"></span>hsl(98,84,40)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(140,30%,60%);"><span class="n">13</span><span class="lbl">pulse</span><div class="key-block" style="background:hsl(320,100%,50%);"></div><div class="meta"><span><span class="sw" style="background:hsl(140,30%,60%)"></span>hsl(140,30,60)</span><span class="k"><span class="sw" style="background:hsl(320,100%,50%)"></span>hsl(320,100,50)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(168,32%,60%);"><span class="n">14</span><span class="lbl">rose signal</span><div class="key-block" style="background:hsl(348,100%,58%);"></div><div class="meta"><span><span class="sw" style="background:hsl(168,32%,60%)"></span>hsl(168,32,60)</span><span class="k"><span class="sw" style="background:hsl(348,100%,58%)"></span>hsl(348,100,58)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(128,30%,50%);"><span class="n">15</span><span class="lbl">ghost petal</span><div class="key-block" style="background:hsl(338,88%,66%);"></div><div class="meta"><span><span class="sw" style="background:hsl(128,30%,50%)"></span>hsl(128,30,50)</span><span class="k"><span class="sw" style="background:hsl(338,88%,66%)"></span>hsl(338,88,66)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(155,32%,60%);"><span class="n">16</span><span class="lbl">coral charge</span><div class="key-block" style="background:hsl(358,96%,60%);"></div><div class="meta"><span><span class="sw" style="background:hsl(155,32%,60%)"></span>hsl(155,32,60)</span><span class="k"><span class="sw" style="background:hsl(358,96%,60%)"></span>hsl(358,96,60)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(218,32%,62%);"><span class="n">17</span><span class="lbl">desert gold</span><div class="key-block" style="background:hsl(42,100%,50%);"></div><div class="meta"><span><span class="sw" style="background:hsl(218,32%,62%)"></span>hsl(218,32,62)</span><span class="k"><span class="sw" style="background:hsl(42,100%,50%)"></span>hsl(42,100,50)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(212,34%,60%);"><span class="n">18</span><span class="lbl">amber charge</span><div class="key-block" style="background:hsl(34,100%,52%);"></div><div class="meta"><span><span class="sw" style="background:hsl(212,34%,60%)"></span>hsl(212,34,60)</span><span class="k"><span class="sw" style="background:hsl(34,100%,52%)"></span>hsl(34,100,52)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(228,30%,62%);"><span class="n">19</span><span class="lbl">putty glow</span><div class="key-block" style="background:hsl(38,96%,60%);"></div><div class="meta"><span><span class="sw" style="background:hsl(228,30%,62%)"></span>hsl(228,30,62)</span><span class="k"><span class="sw" style="background:hsl(38,96%,60%)"></span>hsl(38,96,60)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(225,34%,60%);"><span class="n">20</span><span class="lbl">ochre hard</span><div class="key-block" style="background:hsl(44,100%,48%);"></div><div class="meta"><span><span class="sw" style="background:hsl(225,34%,60%)"></span>hsl(225,34,60)</span><span class="k"><span class="sw" style="background:hsl(44,100%,48%)"></span>hsl(44,100,48)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(72,30%,58%);"><span class="n">21</span><span class="lbl">violet charge</span><div class="key-block" style="background:hsl(270,96%,60%);"></div><div class="meta"><span><span class="sw" style="background:hsl(72,30%,58%)"></span>hsl(72,30,58)</span><span class="k"><span class="sw" style="background:hsl(270,96%,60%)"></span>hsl(270,96,60)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(68,32%,57%);"><span class="n">22</span><span class="lbl">bone lavender</span><div class="key-block" style="background:hsl(258,82%,66%);"></div><div class="meta"><span><span class="sw" style="background:hsl(68,32%,57%)"></span>hsl(68,32,57)</span><span class="k"><span class="sw" style="background:hsl(258,82%,66%)"></span>hsl(258,82,66)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(38,36%,62%);"><span class="n">23</span><span class="lbl">periwinkle charge</span><div class="key-block" style="background:hsl(240,82%,66%);"></div><div class="meta"><span><span class="sw" style="background:hsl(38,36%,62%)"></span>hsl(38,36,62)</span><span class="k"><span class="sw" style="background:hsl(240,82%,66%)"></span>hsl(240,82,66)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(200,30%,60%);"><span class="n">24</span><span class="lbl">iron bloom</span><div class="key-block" style="background:hsl(20,94%,48%);"></div><div class="meta"><span><span class="sw" style="background:hsl(200,30%,60%)"></span>hsl(200,30,60)</span><span class="k"><span class="sw" style="background:hsl(20,94%,48%)"></span>hsl(20,94,48)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(210,34%,58%);"><span class="n">25</span><span class="lbl">ember dusk</span><div class="key-block" style="background:hsl(28,100%,58%);"></div><div class="meta"><span><span class="sw" style="background:hsl(210,34%,58%)"></span>hsl(210,34,58)</span><span class="k"><span class="sw" style="background:hsl(28,100%,58%)"></span>hsl(28,100,58)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(22,36%,58%);"><span class="n">26</span><span class="lbl">shoreline</span><div class="key-block" style="background:hsl(230,78%,60%);"></div><div class="meta"><span><span class="sw" style="background:hsl(22,36%,58%)"></span>hsl(22,36,58)</span><span class="k"><span class="sw" style="background:hsl(230,78%,60%)"></span>hsl(230,78,60)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(18,38%,57%);"><span class="n">27</span><span class="lbl">cracked earth</span><div class="key-block" style="background:hsl(204,80%,62%);"></div><div class="meta"><span><span class="sw" style="background:hsl(18,38%,57%)"></span>hsl(18,38,57)</span><span class="k"><span class="sw" style="background:hsl(204,80%,62%)"></span>hsl(204,80,62)</span></div><button class="expand-btn">⤢</button></div>
+<div class="pair" style="background:hsl(220,36%,60%);"><span class="n">28</span><span class="lbl">gilded steel</span><div class="key-block" style="background:hsl(46,100%,52%);"></div><div class="meta"><span><span class="sw" style="background:hsl(220,36%,60%)"></span>hsl(220,36,60)</span><span class="k"><span class="sw" style="background:hsl(46,100%,52%)"></span>hsl(46,100,52)</span></div><button class="expand-btn">⤢</button></div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" role="dialog" aria-modal="true" aria-label="Color pair expanded view">
+  <div id="lb-bg"></div>
+  <div id="lb-key"></div>
+  <button id="lb-close" aria-label="Close fullscreen view (Esc)">esc / close</button>
+  <div id="lb-info">
+    <div class="lb-color" id="lb-bg-btn" role="button" tabindex="0" aria-label="Copy background color"><div class="lb-swatch" id="lb-bg-sw"></div><span class="lb-hex" id="lb-bg-hex">—</span></div>
+    <div class="lb-color" id="lb-key-btn" role="button" tabindex="0" aria-label="Copy key color"><div class="lb-swatch" id="lb-key-sw"></div><span class="lb-hex" id="lb-key-hex">—</span></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  /* ── OKLCH math ──────────────────────────────────────── */
+  function hslToRgb01(h, s, l) {
+    s /= 100; l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
+    return [f(0), f(8), f(4)];
+  }
+  function rgbToOklch(r, g, b) {
+    const lin = v => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    const [rl, gl, bl] = [lin(r), lin(g), lin(b)];
+    const lms = [
+      Math.cbrt(0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl),
+      Math.cbrt(0.2119034982 * rl + 0.6806995451 * gl + 0.1073969566 * bl),
+      Math.cbrt(0.0883024619 * rl + 0.2817188376 * gl + 0.6299787005 * bl),
+    ];
+    const L  =  0.2104542553 * lms[0] + 0.7936177850 * lms[1] - 0.0040720468 * lms[2];
+    const a  =  1.9779984951 * lms[0] - 2.4285922050 * lms[1] + 0.4505937099 * lms[2];
+    const bv =  0.0259040371 * lms[0] + 0.7827717662 * lms[1] - 0.8086757660 * lms[2];
+    return { L, C: Math.sqrt(a * a + bv * bv), H: (Math.atan2(bv, a) * 180 / Math.PI + 360) % 360 };
+  }
+  function hslToOklch(h, s, l) {
+    return rgbToOklch(...hslToRgb01(h, s, l));
+  }
+  function oklchToCSS(L, C, H) {
+    return `oklch(${L.toFixed(3)} ${C.toFixed(4)} ${H.toFixed(1)})`;
+  }
+
+  /* ── Munsell home lightness (HSL %) ─────────────────── */
+  function munsellL(h) {
+    if (h >= 350 || h < 20)  return 51;  // red
+    if (h < 40)              return 52;  // orange
+    if (h < 65)              return 64;  // yellow — high!
+    if (h < 88)              return 55;  // yellow-green
+    if (h < 165)             return 47;  // green
+    if (h < 205)             return 53;  // cyan
+    if (h < 248)             return 46;  // blue
+    if (h < 280)             return 41;  // indigo — lowest
+    if (h < 315)             return 54;  // purple
+    return 58;                           // red-purple / magenta
+  }
+
+  /* ── H-K rating ─────────────────────────────────────── */
+  function hkRating(h) {
+    if (h >= 310 || h <= 10)            return 3; // red-magenta: max
+    if (h >= 245 && h < 315)            return 3; // blue-violet: max
+    if ((h >= 160 && h < 230) || (h >= 330 && h < 360)) return 2;
+    return 1;
+  }
+  function hkLabel(h) {
+    const n = ['', '★☆☆  low H-K', '★★☆  medium H-K', '★★★  max H-K'];
+    return n[hkRating(h)];
+  }
+
+  /* ── utils ───────────────────────────────────────────── */
+  function toHex(css) {
+    const c = document.createElement('canvas'); c.width = c.height = 1;
+    const x = c.getContext('2d'); x.fillStyle = css; x.fillRect(0,0,1,1);
+    const [r,g,b] = x.getImageData(0,0,1,1).data;
+    return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('').toUpperCase();
+  }
+  let tt;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1600);
+  }
+  function copyStr(str) {
+    navigator.clipboard.writeText(str).catch(() => {});
+    toast(str + '  copied');
+  }
+
+  /* ── Settings state ─────────────────────────────────── */
+  const S = { oklch: false, munsell: false, hk: false, p3: false, boost: false, pattern: true };
+
+  document.querySelectorAll('.toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.s;
+      S[key] = !S[key];
+      btn.classList.toggle('on', S[key]);
+      btn.textContent = S[key] ? 'On' : 'Off';
+      btn.setAttribute('aria-pressed', S[key]);
+      if (key === 'munsell' && S[key]) {
+        document.getElementById('kL').value = munsellL(+document.getElementById('kH').value);
+      }
+      if (key === 'boost') {
+        document.getElementById('boost-panel').classList.toggle('visible', S[key]);
+      }
+      if (key === 'pattern') {
+        document.getElementById('pattern-strip').classList.toggle('visible', S[key]);
+      }
+      updateGen();
+    });
+  });
+
+  // Auto-sync lightness when munsell on and hue moves
+  document.getElementById('kH').addEventListener('input', () => {
+    if (S.munsell) document.getElementById('kL').value = munsellL(+document.getElementById('kH').value);
+  });
+
+  /* ── Boost palette ─────────────────────────────────── */
+  // Five offsets: 60° and 90° = peak hue induction,
+  // 120° = near-triadic strong induction, 150° = transition,
+  // 180° = pure chroma boost (radial displacement)
+  const BOOST_ANGLES = [
+    { deg: 60,  label: '60°',  type: 'hue shift  peak' },
+    { deg: 90,  label: '90°',  type: 'hue shift  peak' },
+    { deg: 120, label: '120°', type: 'hue shift  strong' },
+    { deg: 150, label: '150°', type: 'hue shift  fading' },
+    { deg: 180, label: '180°', type: 'chroma boost  pure' },
+  ];
+
+  function renderBoostPanel() {
+    if (!S.boost) return;
+    const v  = genVals();
+    const kL = S.munsell ? munsellL(v.kH) : v.kL;
+    const container = document.getElementById('boost-swatches');
+    const currentOffset = v.o;
+    container.innerHTML = '';
+
+    BOOST_ANGLES.forEach(({ deg, label, type }) => {
+      const bgH  = (v.kH + deg) % 360;
+      const kCSS = `hsl(${v.kH},${v.kS}%,${kL}%)`;
+      const bCSS = `hsl(${bgH},${v.bS}%,${v.bL}%)`;
+
+      const el = document.createElement('div');
+      el.className = 'boost-swatch' + (deg === currentOffset ? ' active' : '');
+      el.style.background = bCSS;
+      el.title = `Click to set offset to ${deg}° · Shift+click to copy bg hex`;
+      el.innerHTML = `
+        <div class="boost-swatch-key" style="background:${kCSS}"></div>
+        <div class="boost-meta">
+          <span class="boost-angle">${label}</span>
+          <span class="boost-type">${type}</span>
+        </div>
+        <span class="boost-copy">${toHex(bCSS)}</span>`;
+
+      el.addEventListener('click', (e) => {
+        if (e.shiftKey) {
+          copyStr(toHex(bCSS));
+        } else {
+          document.getElementById('bgO').value = deg;
+          updateGen();
+        }
+      });
+      // Right-click or ctrl+click copies bg hex
+      el.addEventListener('contextmenu', e => {
+        e.preventDefault(); copyStr(toHex(bCSS));
+      });
+
+      container.appendChild(el);
+    });
+  }
+  function genVals() {
+    return {
+      kH: +document.getElementById('kH').value,
+      kS: +document.getElementById('kS').value,
+      kL: +document.getElementById('kL').value,
+      o:  +document.getElementById('bgO').value,
+      bS: +document.getElementById('bgS').value,
+      bL: +document.getElementById('bgL').value,
+    };
+  }
+
+  /* ── Build colors from current state ────────────────── */
+  function buildColors() {
+    const v = genVals();
+    const kL = S.munsell ? munsellL(v.kH) : v.kL;
+
+    let kCSS, bCSS, kCopy, bCopy, kSub, bSub;
+
+    if (S.oklch || S.p3) {
+      // Always go through OKLCH when either switch is active
+      const kOk  = hslToOklch(v.kH, v.kS, kL);
+      const bgOk = hslToOklch((v.kH + v.o) % 360, v.bS, v.bL);
+      // Background hue in OKLCH space (offset applied in perceptual space)
+      const bgH  = S.oklch ? (kOk.H + v.o) % 360 : bgOk.H;
+
+      const kC = S.p3 ? Math.min(kOk.C * 1.22, 0.38) : kOk.C;
+      const bC = S.p3 ? Math.min(bgOk.C * 1.22, 0.20) : bgOk.C;
+
+      kCSS  = oklchToCSS(kOk.L, kC, kOk.H);
+      bCSS  = oklchToCSS(bgOk.L, bC, bgH);
+      kCopy = kCSS;
+      bCopy = bCSS;
+
+      const modeTag = [S.oklch && 'oklch', S.p3 && 'p3'].filter(Boolean).join('+');
+      kSub  = `${modeTag}  L:${kOk.L.toFixed(2)} C:${kC.toFixed(3)} H:${kOk.H.toFixed(0)}°${S.munsell ? '  munsell' : ''}`;
+      bSub  = `${modeTag}  complement  +${v.o}°`;
+    } else {
+      const bgH = (v.kH + v.o) % 360;
+      kCSS  = `hsl(${v.kH},${v.kS}%,${kL}%)`;
+      bCSS  = `hsl(${bgH},${v.bS}%,${v.bL}%)`;
+      kCopy = toHex(kCSS);
+      bCopy = toHex(bCSS);
+      kSub  = `hsl(${v.kH}, ${v.kS}, ${kL})${S.munsell ? '  munsell' : ''}`;
+      bSub  = `hsl(${bgH}, ${v.bS}, ${v.bL})`;
+    }
+
+    return { kCSS, bCSS, kCopy, bCopy, kSub, bSub, kL };
+  }
+
+  /* ── Update preview ─────────────────────────────────── */
+  const gPrev = document.getElementById('gen-preview');
+  const gKey  = document.getElementById('gen-key');
+
+  function updateGen() {
+    const v = genVals();
+    const { kCSS, bCSS, kCopy, bCopy, kSub, bSub, kL } = buildColors();
+
+    if (S.munsell) document.getElementById('kL').value = kL;
+
+    gKey.style.background = kCSS;
+
+    document.getElementById('kH-v').textContent  = v.kH + '°';
+    document.getElementById('kS-v').textContent  = v.kS + '%';
+    document.getElementById('kL-v').textContent  = kL + '%';
+    document.getElementById('bgO-v').textContent = v.o  + '°';
+    document.getElementById('bgS-v').textContent = v.bS + '%';
+    document.getElementById('bgL-v').textContent = v.bL + '%';
+
+    // Swatch display
+    const useOklch = S.oklch || S.p3;
+    const hexEl = document.getElementById('g-bg-hex');
+    const keyEl = document.getElementById('g-key-hex');
+    hexEl.style.fontSize = useOklch ? '8.5px' : '12px';
+    keyEl.style.fontSize = useOklch ? '8.5px' : '12px';
+
+    document.getElementById('g-bg-sw').style.background  = bCSS;
+    document.getElementById('g-key-sw').style.background = kCSS;
+    document.getElementById('g-bg-hex').textContent  = bCopy;
+    document.getElementById('g-key-hex').textContent = kCopy;
+    document.getElementById('g-bg-hsl').textContent  = bSub;
+    document.getElementById('g-key-hsl').textContent = kSub;
+
+    // H-K badge
+    const badge = document.getElementById('hk-badge');
+    if (S.hk) { badge.textContent = hkLabel(v.kH); badge.style.display = 'block'; }
+    else       { badge.style.display = 'none'; }
+
+    // Boost panel
+    renderBoostPanel();
+
+    // Pattern preview & strip
+    const bAlt = buildBgAlt(v, kL);
+    const hexB = toHex(bCSS), hexA = toHex(bAlt);
+    gPrev.style.background = buildBgStyle(bCSS, bAlt, currentPattern, hexB, hexA);
+    renderPatternStrip(kCSS, bCSS, bAlt, hexB, hexA);
+
+    // Hue wheel
+    updateHueWheel(v.kH);
+
+    // Score
+    updateScore(v);
+
+    // URL state
+    encodeState();
+  }
+
+  ['kH','kS','kL','bgO','bgS','bgL'].forEach(id =>
+    document.getElementById(id).addEventListener('input', updateGen));
+
+  /* ── Copy from generator ─────────────────────────────── */
+  function addActivation(id, fn) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', fn);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } });
+  }
+  addActivation('g-bg-row',  () => copyStr(buildColors().bCopy));
+  addActivation('g-key-row', () => copyStr(buildColors().kCopy));
+  gKey.addEventListener('click', e => {
+    e.stopPropagation(); copyStr(buildColors().kCopy);
+  });
+  gPrev.addEventListener('click', e => {
+    if (e.target === gKey || e.target.id === 'gen-expand') return;
+    copyStr(buildColors().bCopy);
+  });
+  document.getElementById('gen-expand').addEventListener('click', e => {
+    e.stopPropagation();
+    const { kCSS, bCSS } = buildColors();
+    openLB(bCSS, kCSS);
+  });
+
+  /* ── Add to palette ──────────────────────────────────── */
+  let count = 28;
+  document.getElementById('gen-add').addEventListener('click', () => {
+    const { kCSS, bCSS, kCopy, bCopy } = buildColors();
+    count++;
+    const p = document.createElement('div');
+    p.className = 'pair';
+    p.style.background = bCSS;
+    p.innerHTML = `
+      <span class="n">${String(count).padStart(2,'0')}</span>
+      <span class="lbl">custom</span>
+      <div class="key-block" style="background:${kCSS};"></div>
+      <div class="meta">
+        <span><span class="sw" style="background:${bCSS}"></span>${bCopy}</span>
+        <span class="k"><span class="sw" style="background:${kCSS}"></span>${kCopy}</span>
+      </div>
+      <button class="expand-btn">⤢</button>`;
+    wirePair(p);
+    document.getElementById('lightbox').before(p);
+    p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  /* ── Lightbox ────────────────────────────────────────── */
+  const lb    = document.getElementById('lightbox');
+  const lbBg  = document.getElementById('lb-bg');
+  const lbKey = document.getElementById('lb-key');
+
+  function openLB(bg, key) {
+    lbBg.style.background  = bg;
+    lbKey.style.background = key;
+    document.getElementById('lb-bg-sw').style.background  = bg;
+    document.getElementById('lb-key-sw').style.background = key;
+    document.getElementById('lb-bg-hex').textContent  = toHex(bg);
+    document.getElementById('lb-key-hex').textContent = toHex(key);
+    lb.classList.add('open');
+  }
+  function closeLB() { lb.classList.remove('open'); }
+
+  document.getElementById('lb-close').addEventListener('click', closeLB);
+  lbBg.addEventListener('click', closeLB);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLB(); exportModal.classList.remove('open'); } });
+  lbKey.addEventListener('click', e => { e.stopPropagation(); copyStr(toHex(lbKey.style.background)); });
+  addActivation('lb-bg-btn',  () => copyStr(toHex(lbBg.style.background)));
+  addActivation('lb-key-btn', () => copyStr(toHex(lbKey.style.background)));
+
+  /* ── Wire pair cards ─────────────────────────────────── */
+  function wirePair(p) {
+    const k = p.querySelector('.key-block');
+    const b = p.querySelector('.expand-btn');
+    const name = p.querySelector('.lbl') ? p.querySelector('.lbl').textContent : 'color pair';
+    b.setAttribute('aria-label', `Expand ${name} fullscreen`);
+    k.setAttribute('role', 'button');
+    k.setAttribute('tabindex', '0');
+    k.setAttribute('aria-label', `Copy key color for ${name}`);
+    k.addEventListener('click', e => { e.stopPropagation(); copyStr(toHex(k.style.background)); });
+    k.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyStr(toHex(k.style.background)); } });
+    p.addEventListener('click', e => {
+      if (e.target === k || e.target === b) return;
+      copyStr(toHex(p.style.background));
+    });
+    b.addEventListener('click', e => { e.stopPropagation(); openLB(p.style.background, k.style.background); });
+  }
+
+  document.querySelectorAll('.pair').forEach(wirePair);
+
+  /* ── Spacebar randomizer ─────────────────────────────── */
+  function randomImpossible() {
+    // Random hue — full wheel, any family works
+    const kH = Math.floor(Math.random() * 360);
+
+    // Key: always max saturation; lightness from Munsell if on, else recipe midpoint
+    const kS = 92 + Math.floor(Math.random() * 8); // 92–100
+    const kL = S.munsell ? munsellL(kH) : munsellL(kH); // always use Munsell for randomizer — it guarantees max chroma
+
+    // Background: narrow sweet spot from recipe — S:28–38%, L:58–66%
+    const bS = 28 + Math.floor(Math.random() * 11); // 28–38
+    const bL = 58 + Math.floor(Math.random() * 9);  // 58–66
+
+    // Offset: keep whatever is currently set — so if user is on 90° it explores at 90°
+    // (bgO slider untouched)
+
+    document.getElementById('kH').value = kH;
+    document.getElementById('kS').value = kS;
+    document.getElementById('kL').value = kL;
+    document.getElementById('bgS').value = bS;
+    document.getElementById('bgL').value = bL;
+
+    // If Munsell is on, sync the slider display
+    if (S.munsell) document.getElementById('kL').value = kL;
+
+    updateGen();
+
+    // If lightbox is open, update it with the new pair
+    if (lb.classList.contains('open')) {
+      const { bCSS, kCSS } = buildColors();
+      openLB(bCSS, kCSS);
+    }
+
+    // Flash the hint
+    const hint = document.getElementById('space-hint');
+    hint.classList.add('flash');
+    hint.textContent = `space — ${kH}° ${['red','orange','yellow','yellow-green','green','teal','cyan','blue','indigo','violet','magenta','rose'][Math.floor(kH/30)]}`;
+    clearTimeout(hint._t);
+    hint._t = setTimeout(() => {
+      hint.classList.remove('flash');
+      hint.textContent = 'space — random';
+    }, 1200);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      const lbOpen = lb.classList.contains('open');
+      // Fire randomize when: lightbox is open (any focus), OR focus is not on a control
+      if (lbOpen || !['INPUT','TEXTAREA','BUTTON'].includes(e.target.tagName)) {
+        e.preventDefault();
+        randomImpossible();
+      }
+    }
+  });
+  const PRESETS = {
+    // ── Angle comparison ────────────────────────────────────────────────
+    'hue-shift': {
+      // 90° = intermediate angle: peak hue-shift induction, weaker chroma boost
+      label: 'Hue shift (90°)',
+      sliders: { kH: 8, kS: 100, kL: 52, bgO: 90, bgS: 32, bgL: 62 },
+      toggles: { oklch: true, munsell: false, hk: false, p3: false, boost: true }
+    },
+    'oklch-glow': {
+      // 180° in OKLCH = true perceptual complement, maximum radial chroma boost
+      label: 'OKLCH chroma boost (180°)',
+      sliders: { kH: 8, kS: 100, kL: 52, bgO: 180, bgS: 32, bgL: 62 },
+      toggles: { oklch: true, munsell: false, hk: false, p3: false, boost: true }
+    },
+    // ── Munsell ─────────────────────────────────────────────────────────
+    'munsell': {
+      // Snaps key lightness to the Munsell home value for current hue
+      label: 'Munsell home lightness',
+      sliders: { kH: 8, kS: 100, bgO: 180, bgS: 32, bgL: 62 },
+      toggles: { munsell: true }
+    },
+    // ── H-K peak hues ───────────────────────────────────────────────────
+    'hk-magenta': {
+      // Red-magenta ~340°: highest H-K boost on screen; bg is cyan-green complement
+      label: 'H-K max: magenta',
+      sliders: { kH: 340, kS: 100, bgO: 180, bgS: 24, bgL: 64 },
+      toggles: { munsell: true, hk: true, oklch: true, p3: false }
+    },
+    'hk-blue': {
+      // Blue ~268°: very strong H-K; bg is yellow-orange complement
+      label: 'H-K max: blue',
+      sliders: { kH: 268, kS: 100, bgO: 180, bgS: 28, bgL: 60 },
+      toggles: { munsell: true, hk: true, oklch: true, p3: false }
+    },
+    'violet-charge': {
+      // Violet ~270° + strong H-K + munsell precision; complement is yellow-green
+      label: 'Violet charge',
+      sliders: { kH: 278, kS: 96, bgO: 180, bgS: 26, bgL: 60 },
+      toggles: { oklch: true, munsell: true, hk: true, p3: false }
+    },
+    // ── Lightness strategies ────────────────────────────────────────────
+    'strategy-a': {
+      // Equiluminant: kL = bgL = 52; isolates chromatic induction with no Hunt effect
+      label: 'Strategy A — equiluminant',
+      sliders: { kH: 8, kS: 100, kL: 52, bgO: 180, bgS: 32, bgL: 52 },
+      toggles: { oklch: true, munsell: false }
+    },
+    'strategy-b': {
+      // Dark surround: compounds Hunt effect + chromatic induction; works best with H-K hues
+      label: 'Strategy B — dark surround',
+      sliders: { kH: 8, kS: 100, kL: 62, bgO: 180, bgS: 40, bgL: 20 },
+      toggles: { oklch: true, munsell: false }
+    },
+    'hunt-dark': {
+      // Max Hunt: very bright key (kL:70) against very dark surround (bgL:16)
+      label: 'Hunt max — extreme dark',
+      sliders: { kH: 14, kS: 100, kL: 70, bgO: 180, bgS: 42, bgL: 16 },
+      toggles: { oklch: true, munsell: false, boost: true }
+    },
+    'middle-path': {
+      // Sweet spot: mid-tone surround L:62, strong induction + partial Hunt, OKLCH
+      label: 'Middle path',
+      sliders: { kH: 8, kS: 100, kL: 52, bgO: 180, bgS: 32, bgL: 62 },
+      toggles: { oklch: true, munsell: false }
+    },
+    // ── Cool key ────────────────────────────────────────────────────────
+    'cold-fire': {
+      // Cyan key (188°) against warm orange-red complement; strong cross-temperature induction
+      label: 'Cold fire — cyan on warm',
+      sliders: { kH: 188, kS: 100, bgO: 180, bgS: 34, bgL: 58 },
+      toggles: { oklch: true, munsell: true, hk: false, p3: false }
+    },
+    // ── All-in ──────────────────────────────────────────────────────────
+    'full-recipe': {
+      // Every mechanism active: OKLCH, Munsell, H-K, P3, at the canonical red-orange
+      label: 'Full recipe',
+      sliders: { kH: 8, kS: 100, bgO: 180, bgS: 32, bgL: 62 },
+      toggles: { oklch: true, munsell: true, hk: true, p3: true, boost: true }
+    },
+    'p3': {
+      // P3 wide-gamut output: pushes chroma beyond sRGB into Display P3
+      label: 'P3 output',
+      sliders: { kH: 8, kS: 100, kL: 52, bgO: 180, bgS: 32, bgL: 62 },
+      toggles: { oklch: true, p3: true, munsell: false }
+    }
+  };
+
+  function applyPreset(id) {
+    const p = PRESETS[id];
+    if (!p) return;
+
+    // Apply sliders
+    if (p.sliders) {
+      Object.entries(p.sliders).forEach(([k, v]) => {
+        const el = document.getElementById(k);
+        if (el) el.value = v;
+      });
+    }
+
+    // Apply toggles — only set, never clear unless explicitly false
+    if (p.toggles) {
+      Object.entries(p.toggles).forEach(([key, val]) => {
+        if (S[key] !== val) {
+          S[key] = val;
+          const btn = document.querySelector(`.toggle[data-s="${key}"]`);
+          if (btn) {
+            btn.classList.toggle('on', val);
+            btn.textContent = val ? 'On' : 'Off';
+            btn.setAttribute('aria-pressed', val);
+          }
+          if (key === 'boost') {
+            document.getElementById('boost-panel').classList.toggle('visible', val);
+          }
+          if (key === 'pattern') {
+            document.getElementById('pattern-strip').classList.toggle('visible', val);
+          }
+        }
+      });
+    }
+
+    // Sync munsell lightness
+    if (S.munsell) {
+      document.getElementById('kL').value = munsellL(+document.getElementById('kH').value);
+    }
+
+    updateGen();
+
+    // Scroll to generator
+    document.getElementById('generator').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Flash all pills for this preset
+    document.querySelectorAll(`.preset-pill[data-preset="${id}"]`).forEach(pill => {
+      const orig = pill.dataset.label || pill.textContent;
+      pill.dataset.label = orig;
+      pill.classList.add('fired');
+      pill.textContent = orig + ' ✓';
+      setTimeout(() => {
+        pill.classList.remove('fired');
+        pill.textContent = orig;
+      }, 1800);
+    });
+
+    toast(p.label + ' applied');
+  }
+
+  // Delegation — pills live in #research which is parsed AFTER this script tag
+  document.addEventListener('click', e => {
+    const pill = e.target.closest('.preset-pill');
+    if (pill) applyPreset(pill.dataset.preset);
+  });
+
+  /* ── Pattern system ──────────────────────────────────── */
+  const PATTERN_DEFS = [
+    { id: 'solid',   label: 'Solid',         note: 'max induction' },
+    { id: 'coarse',  label: 'Coarse stripe', note: 'weakened' },
+    { id: 'fine',    label: 'Fine stripe',   note: 'assimilation →' },
+    { id: 'checker', label: 'Checker',       note: 'broken' },
+    { id: 'dots',    label: 'Dots',          note: 'scattered' },
+    { id: 'rings',   label: 'Radial rings',  note: 'partial' },
+  ];
+  const PATTERN_IDS = PATTERN_DEFS.map(p => p.id);
+  let currentPattern = 'solid';
+
+  function buildBgAlt(v, kL) {
+    // Lighter/softer version of bg for pattern secondary color
+    const bgH = (v.kH + v.o) % 360;
+    if (S.oklch || S.p3) {
+      const bgOk = hslToOklch(bgH, v.bS, v.bL);
+      return oklchToCSS(Math.min(bgOk.L + 0.13, 0.91), bgOk.C * 0.65, bgOk.H);
+    }
+    return `hsl(${bgH},${Math.max(0, v.bS - 10)}%,${Math.min(90, v.bL + 16)}%)`;
+  }
+
+  function buildBgStyle(bCSS, bAlt, pattern, hexB, hexA) {
+    const h1 = hexB || toHex(bCSS);
+    const h2 = hexA || toHex(bAlt);
+    switch (pattern) {
+      case 'coarse':
+        return `repeating-linear-gradient(90deg, ${bCSS} 0 22px, ${bAlt} 22px 44px)`;
+      case 'fine':
+        return `repeating-linear-gradient(90deg, ${bCSS} 0 3px, ${bAlt} 3px 6px)`;
+      case 'checker': {
+        const s = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><rect width='24' height='24' fill='${h1}'/><rect width='12' height='12' fill='${h2}'/><rect x='12' y='12' width='12' height='12' fill='${h2}'/></svg>`;
+        return `url("data:image/svg+xml,${encodeURIComponent(s)}")`;
+      }
+      case 'dots': {
+        const s = `<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18'><rect width='18' height='18' fill='${h1}'/><circle cx='9' cy='9' r='4.5' fill='${h2}'/></svg>`;
+        return `url("data:image/svg+xml,${encodeURIComponent(s)}")`;
+      }
+      case 'rings':
+        return `repeating-radial-gradient(circle at center, ${bCSS} 0 8px, ${bAlt} 8px 16px)`;
+      default:
+        return bCSS;
+    }
+  }
+
+  let patternTilesCreated = false;
+  function renderPatternStrip(kCSS, bCSS, bAlt, hexB, hexA) {
+    const container = document.getElementById('pattern-tiles');
+    if (!patternTilesCreated) {
+      container.innerHTML = '';
+      PATTERN_DEFS.forEach(({ id, label, note }) => {
+        const tile = document.createElement('div');
+        tile.className = 'pattern-tile';
+        tile.dataset.pid = id;
+        tile.title = `${label} — ${note}`;
+        tile.addEventListener('click', () => { currentPattern = id; updateGen(); });
+        container.appendChild(tile);
+      });
+      patternTilesCreated = true;
+    }
+    const hexK = toHex(kCSS);
+    container.querySelectorAll('.pattern-tile').forEach(tile => {
+      const id = tile.dataset.pid;
+      tile.style.background = buildBgStyle(bCSS, kCSS, id, hexB, hexK);
+      tile.classList.toggle('active', id === currentPattern);
+    });
+  }
+
+  /* ── Hue wheel ───────────────────────────────────────── */
+  const hueWheelEl = document.getElementById('hue-wheel');
+  let wheelDragging = false;
+
+  function updateHueWheel(hue) {
+    const dot  = document.getElementById('hue-wheel-dot');
+    const dot2 = document.getElementById('hue-wheel-dot2');
+    const r = 18, cx = 26, cy = 26;
+    const a1 = (hue - 90) * Math.PI / 180;
+    dot.style.left = (cx + r * Math.cos(a1) - 4) + 'px';
+    dot.style.top  = (cy + r * Math.sin(a1) - 4) + 'px';
+    const a2 = (hue + 180 - 90) * Math.PI / 180;
+    dot2.style.left = (cx + r * Math.cos(a2) - 3) + 'px';
+    dot2.style.top  = (cy + r * Math.sin(a2) - 3) + 'px';
+  }
+
+  function hueFromPointer(e) {
+    const rect = hueWheelEl.getBoundingClientRect();
+    const angle = Math.atan2(
+      e.clientY - (rect.top + rect.height / 2),
+      e.clientX - (rect.left + rect.width / 2)
+    );
+    return Math.round(((angle * 180 / Math.PI) + 90 + 360) % 360);
+  }
+
+  hueWheelEl.addEventListener('pointerdown', e => {
+    e.preventDefault(); wheelDragging = true;
+    hueWheelEl.setPointerCapture(e.pointerId);
+    const h = hueFromPointer(e);
+    document.getElementById('kH').value = h;
+    if (S.munsell) document.getElementById('kL').value = munsellL(h);
+    updateGen();
+  });
+  hueWheelEl.addEventListener('pointermove', e => {
+    if (!wheelDragging) return;
+    const h = hueFromPointer(e);
+    document.getElementById('kH').value = h;
+    if (S.munsell) document.getElementById('kL').value = munsellL(h);
+    updateGen();
+  });
+  hueWheelEl.addEventListener('pointerup', () => { wheelDragging = false; });
+
+  /* ── Score bar ───────────────────────────────────────── */
+  const MECH_DEFS = [
+    { label: 'Simultaneous contrast', check: ()  => true },
+    { label: 'H-K brightness boost',  check: (v) => hkRating(v.kH) >= 2 },
+    { label: 'Hunt effect',           check: (v) => v.bL < 38 },
+    { label: 'Gamut expansion',       check: ()  => S.oklch || S.p3 },
+    { label: 'Munsell precision',     check: ()  => S.munsell },
+  ];
+  let scoreTilesCreated = false;
+
+  function updateScore(v) {
+    const container = document.getElementById('score-mechs');
+    if (!scoreTilesCreated) {
+      container.innerHTML = '';
+      MECH_DEFS.forEach(({ label }) => {
+        const row = document.createElement('div');
+        row.className = 'score-mech';
+        row.innerHTML = `<div class="score-dot"></div><span>${label}</span>`;
+        container.appendChild(row);
+      });
+      scoreTilesCreated = true;
+    }
+    let count = 0;
+    container.querySelectorAll('.score-mech').forEach((row, i) => {
+      const active = MECH_DEFS[i].check(v);
+      if (active) count++;
+      row.classList.toggle('active', active);
+    });
+    document.getElementById('score-label').textContent = `${count}/5 mechanisms active`;
+  }
+
+  /* ── Animation ───────────────────────────────────────── */
+  let animating = false, animRAF = null;
+  const ANIM_SPEEDS = { slow: 0.28, med: 0.85, fast: 2.4 };
+  let animSpeed = ANIM_SPEEDS.slow;
+
+  const btnAnim = document.getElementById('btn-anim');
+  const animSpeedEl = document.getElementById('anim-speed');
+
+  btnAnim.addEventListener('click', () => {
+    if (animating) return;
+    animating = true;
+    btnAnim.classList.add('playing');
+    animSpeedEl.classList.add('visible');
+    animRAF = requestAnimationFrame(animTick);
+  });
+
+  document.querySelectorAll('.anim-spd').forEach(btn => {
+    btn.addEventListener('click', () => {
+      animSpeed = ANIM_SPEEDS[btn.dataset.speed] || 0.28;
+      document.querySelectorAll('.anim-spd').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  function animTick() {
+    if (!animating) return;
+    const slider = document.getElementById('kH');
+    const next = (+slider.value + animSpeed) % 360;
+    slider.value = next;
+    if (S.munsell) document.getElementById('kL').value = munsellL(next);
+    updateGen();
+    animRAF = requestAnimationFrame(animTick);
+  }
+
+  /* ── Refine ──────────────────────────────────────────── */
+  document.getElementById('btn-refine').addEventListener('click', () => {
+    const v = genVals();
+    document.getElementById('bgO').value = 180;
+    // Clamp bgS to 28-38 sweet spot; if wildly off, snap to center
+    document.getElementById('bgS').value = v.bS < 15 || v.bS > 55 ? 33 : Math.max(28, Math.min(38, v.bS));
+    // Clamp bgL to 58-66 sweet spot
+    document.getElementById('bgL').value = v.bL < 45 || v.bL > 80 ? 62 : Math.max(58, Math.min(66, v.bL));
+    // Max key saturation
+    document.getElementById('kS').value = 100;
+    // Enable OKLCH + Munsell
+    ['oklch', 'munsell'].forEach(k => {
+      if (!S[k]) {
+        S[k] = true;
+        const btn = document.querySelector(`.toggle[data-s="${k}"]`);
+        if (btn) { btn.classList.add('on'); btn.textContent = 'On'; btn.setAttribute('aria-pressed', 'true'); }
+      }
+    });
+    if (S.munsell) document.getElementById('kL').value = munsellL(+document.getElementById('kH').value);
+    if (document.getElementById('boost-panel').classList.contains('visible') !== S.boost) {
+      document.getElementById('boost-panel').classList.toggle('visible', S.boost);
+    }
+    updateGen();
+    toast('refined to recipe sweet spots');
+  });
+
+  /* ── Export modal ────────────────────────────────────── */
+  const exportModal = document.getElementById('export-modal');
+
+  function openExport() {
+    const { kCopy, bCopy } = buildColors();
+    const v = genVals();
+    const kL = S.munsell ? munsellL(v.kH) : v.kL;
+    const kOk = hslToOklch(v.kH, v.kS, kL);
+    const bgH = (v.kH + v.o) % 360;
+    const bOk = hslToOklch(bgH, v.bS, v.bL);
+
+    document.getElementById('ex-css').textContent =
+`:root {\n  --ic-bg:  ${bCopy};\n  --ic-key: ${kCopy};\n}\n\n.surround  { background: var(--ic-bg);  }\n.key-color { background: var(--ic-key); }`;
+
+    document.getElementById('ex-tw').textContent =
+`// tailwind.config.js\nmodule.exports = {\n  theme: { extend: { colors: {\n    'ic-bg':  '${bCopy}',\n    'ic-key': '${kCopy}',\n  }}}\n}`;
+
+    document.getElementById('ex-ok').textContent =
+`bg   oklch(${bOk.L.toFixed(3)} ${bOk.C.toFixed(4)} ${bOk.H.toFixed(1)})\nkey  oklch(${kOk.L.toFixed(3)} ${kOk.C.toFixed(4)} ${kOk.H.toFixed(1)})`;
+
+    exportModal.classList.add('open');
+  }
+
+  document.getElementById('btn-export-open').addEventListener('click', openExport);
+  document.getElementById('export-close').addEventListener('click', () => exportModal.classList.remove('open'));
+  exportModal.addEventListener('click', e => { if (e.target === exportModal) exportModal.classList.remove('open'); });
+
+  document.getElementById('ex-css-copy').addEventListener('click', () => copyStr(document.getElementById('ex-css').textContent));
+  document.getElementById('ex-tw-copy').addEventListener('click',  () => copyStr(document.getElementById('ex-tw').textContent));
+  document.getElementById('ex-ok-copy').addEventListener('click',  () => copyStr(document.getElementById('ex-ok').textContent));
+
+  document.getElementById('ex-download').addEventListener('click', () => {
+    const { kCopy, bCopy } = buildColors();
+    const css = `/* Chromatic Induction Generator — generated pair */\n:root {\n  --cig-bg:  ${bCopy};\n  --cig-key: ${kCopy};\n}\n\n.surround  { background: var(--cig-bg); }\n.key-color { background: var(--cig-key); }\n\n@media (color-gamut: p3) {\n  /* Add P3-expanded values here for wide-gamut displays */\n}\n`;
+    const blob = new Blob([css], { type: 'text/css' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'chromatic-induction.css'; a.click();
+  });
+
+  /* ── URL state ───────────────────────────────────────── */
+  function encodeState() {
+    const v = genVals();
+    const flags = [S.oklch, S.munsell, S.hk, S.p3, S.boost, S.pattern].map(Number);
+    const pIdx  = Math.max(0, PATTERN_IDS.indexOf(currentPattern));
+    history.replaceState(null, '', '#' + [v.kH, v.kS, v.kL, v.o, v.bS, v.bL, ...flags, pIdx].join(','));
+  }
+
+  function decodeState() {
+    if (!location.hash || location.hash.length < 5) return false;
+    try {
+      const p = location.hash.slice(1).split(',').map(Number);
+      if (p.length < 11 || p.some(isNaN)) return false;
+      ['kH','kS','kL','bgO','bgS','bgL'].forEach((id, i) => {
+        const el = document.getElementById(id); if (el) el.value = p[i];
+      });
+      ['oklch','munsell','hk','p3','boost'].forEach((k, i) => {
+        const val = !!p[6 + i];
+        S[k] = val;
+        const btn = document.querySelector(`.toggle[data-s="${k}"]`);
+        if (btn) { btn.classList.toggle('on', val); btn.textContent = val ? 'On' : 'Off'; btn.setAttribute('aria-pressed', val); }
+        if (k === 'boost') document.getElementById('boost-panel').classList.toggle('visible', val);
+      });
+      // New format (length 13): p[11]=pattern flag, p[12]=pIdx
+      // Old format (length 12): p[11]=pIdx, no pattern flag (defaults to true)
+      if (p.length >= 13) {
+        const val = !!p[11];
+        S.pattern = val;
+        const btn = document.querySelector('.toggle[data-s="pattern"]');
+        if (btn) { btn.classList.toggle('on', val); btn.textContent = val ? 'On' : 'Off'; btn.setAttribute('aria-pressed', val); }
+        document.getElementById('pattern-strip').classList.toggle('visible', val);
+      }
+      const pIdx = p.length >= 13 ? p[12] : p[11];
+      if (pIdx !== undefined && PATTERN_IDS[pIdx]) currentPattern = PATTERN_IDS[pIdx];
+      if (S.munsell) document.getElementById('kL').value = munsellL(p[0]);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // Load from URL if present, then render
+  decodeState();
+  updateGen();
+
+</script>
+
+<!-- ═══════════════════════════════════════════════════════
+     RESEARCH SECTION
+     ═══════════════════════════════════════════════════════ -->
+<div id="research">
+<div id="research-inner">
+
+<p class="r-eyebrow">Research-backed edition — v2</p>
+<h1>The Impossible Color Recipe</h1>
+<p class="r-intro">What makes a color appear to glow beyond its physical saturation limit. Five perceptual mechanisms, the correct hue angle (it's not what you assumed), per-hue optimal lightness from Munsell home values, and spatial parameters from vision science. With CSS implementation for wide-gamut OLED screens.</p>
+
+<!-- LIVE DEMOS -->
+<div class="r-section">
+  <h2>Effect Demonstrated</h2>
+  <div class="demo-grid">
+    <div class="demo-pair" style="background:hsl(175,32%,62%);">
+      <div class="demo-key" style="background:hsl(8,100%,52%);"></div>
+      <div class="demo-label">coral / teal</div>
+    </div>
+    <div class="demo-pair" style="background:hsl(218,32%,62%);">
+      <div class="demo-key" style="background:hsl(44,100%,50%);"></div>
+      <div class="demo-label">gold / cobalt</div>
+    </div>
+    <div class="demo-pair" style="background:hsl(162,28%,60%);">
+      <div class="demo-key" style="background:hsl(348,100%,58%);"></div>
+      <div class="demo-label">rose / sage</div>
+    </div>
+    <div class="demo-pair" style="background:hsl(70,26%,57%);">
+      <div class="demo-key" style="background:hsl(265,80%,64%);"></div>
+      <div class="demo-label">lavender / olive</div>
+    </div>
+  </div>
+</div>
+
+<!-- FIVE MECHANISMS -->
+<div class="r-section">
+  <h2>Five Compounding Mechanisms</h2>
+  <p>The glow effect is not one phenomenon — it's five perceptual mechanisms stacking multiplicatively. Each is independently validated. On a wide-gamut OLED in dark ambient, all five fire simultaneously.</p>
+  <div class="mechanisms">
+    <div class="mech accent">
+      <div class="mech-num">01</div>
+      <div class="mech-name">Simultaneous Chromatic Contrast</div>
+      <div class="mech-gain">+hue shift</div>
+      <div class="mech-desc">Visual cortex displaces target color away from surround along the opponent-color vector. 180° in OKLCH maximizes chroma boost (radial displacement), not hue shift.</div>
+      <div class="mech-source">Chevreul 1839 · Hering 1878 · Klauke &amp; Wachtler, JoV 2015</div>
+    </div>
+    <div class="mech">
+      <div class="mech-num">02</div>
+      <div class="mech-name">Helmholtz–Kohlrausch Effect</div>
+      <div class="mech-gain">2–2.5×</div>
+      <div class="mech-desc">Saturated colors appear brighter than equiluminant white. Strongest for red-magenta (~330° CIELAB) and blue (~270°). Almost no effect for yellow. Amplified on OLED.</div>
+      <div class="mech-source">Fairchild &amp; Pirrotta, CRA 1991 · Park, JID 2022 · High et al., CRA 2023</div>
+    </div>
+    <div class="mech">
+      <div class="mech-num">03</div>
+      <div class="mech-name">Hunt Effect</div>
+      <div class="mech-gain">+colorfulness</div>
+      <div class="mech-desc">Perceived colorfulness increases with luminance. CIECAM02 models as M = C × F_L^0.25. Bright key color = more colorful key color. Stack with dark surround for maximum contrast.</div>
+      <div class="mech-source">Hunt, JOSA 1952 · CIECAM02 standard</div>
+    </div>
+    <div class="mech">
+      <div class="mech-num">04</div>
+      <div class="mech-name">Gamut Expansion Effect</div>
+      <div class="mech-gain">+chroma</div>
+      <div class="mech-desc">Uniform chromatic surrounds boost perceived target saturation beyond what variegated surrounds achieve. Clean single-color backgrounds work harder than textured ones.</div>
+      <div class="mech-source">Ekroll, Faul &amp; Wendt, Vision Research 2011</div>
+    </div>
+    <div class="mech">
+      <div class="mech-num">05</div>
+      <div class="mech-name">Chromatic Adaptation</div>
+      <div class="mech-gain">hyperbolic</div>
+      <div class="mech-desc">Prolonged viewing of a chromatic surround causes the visual system to "discount" it. Target then appears to exceed the physical gamut — a "hyperbolic color." True impossible color territory.</div>
+      <div class="mech-source">Churchland, Phil. Psychology 2005 · Valberg, Vision Research 1994</div>
+    </div>
+  </div>
+</div>
+
+<!-- THE 180° CORRECTION -->
+<div class="r-section">
+  <h2>Correcting the Hue Angle — 180° Is Right, But Not Why You Think</h2>
+  <div class="finding">
+    <div class="finding-label">Key research finding</div>
+    Klauke &amp; Wachtler (JoV, 2015) and Ratnasingam &amp; Anderson (JoV, 2017) both confirmed: <strong>maximum chromatic induction does not occur at 180°</strong>. Induction peaks at intermediate hue angles (~60–120° from target) and actually <strong>decreases for larger differences</strong>, reaching a plateau near full complement. At exactly 180°, the displacement vector is purely radial — pushing the target outward in chroma space rather than rotating its hue. For glow, this is precisely what you want: <strong>chroma amplification, not hue shift</strong>. 180° in OKLCH is correct — but for radial displacement, not peak induction strength.
+  </div>
+  <div class="angle-grid">
+    <div class="angle-block">
+      <div class="angle-label">If you want to shift the hue</div>
+      <div class="angle-val" style="color:#1A5A1A;">60–120°</div>
+      <p>Use an intermediate hue angle. Induction peaks here — the target color rotates toward the complement of the surround. Useful for making a neutral appear chromatic, or shifting perceived hue without changing the physical color.</p>
+      <button class="preset-pill" data-preset="hue-shift">Hue shift (60–120°)</button>
+    </div>
+    <div class="angle-block">
+      <div class="angle-label">If you want glow — chroma amplification</div>
+      <div class="angle-val" style="color:#FF2800;">180° in OKLCH</div>
+      <p>The full complement maximizes radial displacement in chroma space. The target is pushed outward — it appears more saturated, not hue-shifted. This is the mechanism behind the "impossible color" effect. <strong>Use OKLCH, not HSL</strong> — HSL's hue circle distorts in the blue-purple region.</p>
+      <button class="preset-pill" data-preset="oklch-glow">OKLCH chroma boost (180°)</button>
+    </div>
+  </div>
+  <p><strong>Why OKLCH over HSL:</strong> HSL is not perceptually uniform. A 180° rotation in HSL from orange lands at blue — but perceptually these are not equally distant complements. In OKLCH, 180° gives the true perceptual complement for each hue. The blue-purple region is most distorted in HSL. All angle specifications in this recipe are OKLCH.</p>
+</div>
+
+<!-- MUNSELL HOME VALUES -->
+<div class="r-section">
+  <h2>Per-Hue Optimal Lightness — Munsell Home Values</h2>
+  <p>Every hue achieves maximum physical chroma at a different lightness. Munsell called this the <strong>"home value"</strong> (Book of Color, 1929). Display a color at its home value before applying the surround — this is your highest possible starting chroma before perceptual amplification. <button class="preset-pill" data-preset="munsell">Munsell home lightness</button></p>
+  <p>The H-K column marks which hues receive the largest perceived brightness boost from the Helmholtz-Kohlrausch effect on self-emissive displays. Target these for maximum glow on screen.</p>
+  <table class="m-table">
+    <tr>
+      <th>Hue family</th><th>OKLCH hue</th><th>Home lightness (L)</th><th>CSS target</th><th>H-K boost</th><th>Bezold-Brücke note</th>
+    </tr>
+    <tr><td><span class="chip" style="background:oklch(0.53 0.22 26);"></span>Red</td><td>20–35°</td><td><span class="tag">L 0.52–0.58</span></td><td>oklch(0.55 0.22+ 26)</td><td class="hk-high">★★★ strong</td><td>Shifts toward yellow at high brightness — start slightly redder</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.60 0.21 40);"></span>Red-orange / Vermillion</td><td>35–55°</td><td><span class="tag">L 0.56–0.64</span></td><td>oklch(0.60 0.19+ 42)</td><td class="hk-high">★★☆ medium-high</td><td>Slight yellow drift at peak brightness</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.70 0.18 65);"></span>Orange / Amber</td><td>55–75°</td><td><span class="tag">L 0.66–0.74</span></td><td>oklch(0.70 0.18+ 62)</td><td class="hk-low">★☆☆ low</td><td>Relatively hue-stable</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.85 0.16 95);"></span>Yellow</td><td>85–105°</td><td><span class="tag">L 0.82–0.90</span></td><td>oklch(0.87 0.14+ 96)</td><td class="hk-low">★☆☆ very low</td><td>Invariant hue near 572nm — extremely stable</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.68 0.20 130);"></span>Yellow-green / Acid</td><td>115–140°</td><td><span class="tag">L 0.64–0.72</span></td><td>oklch(0.68 0.22+ 128)</td><td class="hk-low">★☆☆ low</td><td>Invariant near 503nm green — stable</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.55 0.20 155);"></span>Green</td><td>140–170°</td><td><span class="tag">L 0.52–0.62</span></td><td>oklch(0.56 0.20+ 152)</td><td class="hk-low">★☆☆ low</td><td>P3 gamut gains are largest here</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.62 0.18 190);"></span>Mint / Teal</td><td>170–210°</td><td><span class="tag">L 0.58–0.68</span></td><td>oklch(0.63 0.18+ 192)</td><td class="hk-low">★☆☆ low</td><td>Stable. Largest gamut gains on P3</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.55 0.24 225);"></span>Cyan / Sky blue</td><td>205–240°</td><td><span class="tag">L 0.52–0.62</span></td><td>oklch(0.57 0.20+ 222)</td><td class="hk-high">★★☆ medium-high</td><td>Invariant near 478nm — very stable</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.44 0.24 265);"></span>Blue / Indigo</td><td>245–280°</td><td><span class="tag">L 0.38–0.50</span></td><td>oklch(0.44 0.24+ 268)</td><td class="hk-high">★★★ very strong</td><td>Shifts toward blue at high luminance (Bezold-Brücke) <button class="preset-pill" data-preset="hk-blue">Try blue</button> <button class="preset-pill" data-preset="violet-charge">Try violet</button></td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.52 0.22 290);"></span>Periwinkle / Purple-blue</td><td>278–305°</td><td><span class="tag">L 0.48–0.58</span></td><td>oklch(0.52 0.21+ 292)</td><td class="hk-high">★★★ strong</td><td>H-K peak zone. Strong compound glow</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.58 0.22 310);"></span>Purple / Violet</td><td>305–330°</td><td><span class="tag">L 0.52–0.62</span></td><td>oklch(0.58 0.22+ 316)</td><td class="hk-high">★★★ strong</td><td>Extraspectral hue — invariant to Bezold-Brücke</td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.60 0.24 340);"></span>Magenta / Red-purple</td><td>328–358°</td><td><span class="tag">L 0.55–0.66</span></td><td>oklch(0.62 0.24+ 340)</td><td class="hk-high">★★★ maximum</td><td>Highest H-K boost of all hue families on screen <button class="preset-pill" data-preset="hk-magenta">Try magenta</button></td></tr>
+    <tr><td><span class="chip" style="background:oklch(0.63 0.20 10);"></span>Rose / Warm pink</td><td>355–20°</td><td><span class="tag">L 0.58–0.68</span></td><td>oklch(0.64 0.20+ 6)</td><td class="hk-high">★★☆ medium-high</td><td>Slight yellow shift at high brightness</td></tr>
+  </table>
+</div>
+
+<!-- TWO STRATEGIES -->
+<div class="r-section">
+  <h2>Two Surround Strategies — Choose Your Compound</h2>
+  <p>Gordon &amp; Shapley (2006) demonstrated that <strong>luminance contrast inhibits chromatic induction</strong>. Pure chromatic contrast (equiluminance) produces the strongest simultaneous contrast effect. But on screens, luminance effects compound powerfully with chromatic effects. Two strategies, each scientifically distinct:</p>
+  <div class="strat-grid">
+    <div class="strat">
+      <div class="strat-label">Strategy A</div>
+      <div class="strat-name">Equiluminant Surround</div>
+      <p>Match surround L to key L exactly. Push surround C to gamut boundary at complement hue. Gordon &amp; Shapley: equiluminance maximizes pure chromatic induction — the strongest simultaneous contrast mechanism. No luminance competition, pure hue-vs-hue.</p>
+      <p>Best for: <strong>making calm, muted key colors glow</strong> on mid-tone backgrounds. The image that started this exploration uses this strategy.</p>
+      <div class="strat-verdict">BG: oklch(same L as key · C:0.06–0.12 · H+180°) <button class="preset-pill" data-preset="strategy-a">Apply A</button></div>
+    </div>
+    <div class="strat dark-strat">
+      <div class="strat-label">Strategy B — recommended for screens</div>
+      <div class="strat-name">Dark Chromatic Surround</div>
+      <p>Set surround significantly darker (L 0.15–0.28), with moderate chroma at complement hue. Sacrifices some pure chromatic induction but compounds Hunt effect (colorfulness at high relative luminance) + H-K effect (key appears brighter) + luminance contrast simultaneously.</p>
+      <p>Best for: <strong>maximum perceived glow on OLED displays.</strong> The compound effect exceeds what equiluminance achieves perceptually.</p>
+      <div class="strat-verdict">BG: oklch(0.18–0.28 · C:0.06–0.14 · H+180°) <button class="preset-pill" data-preset="strategy-b">Apply B</button> <button class="preset-pill" data-preset="hunt-dark">Hunt max</button></div>
+    </div>
+  </div>
+  <div class="finding">
+    <div class="finding-label">The middle path — what worked in practice</div>
+    The pairs that worked hardest across our tests used a <strong>mid-tone surround at L 0.58–0.66</strong> — not matching key lightness, not dark. This is slightly lighter than the equiluminant position but carries enough luminance separation to trigger the Hunt effect while still delivering strong chromatic induction. Surround C at 0.06–0.12 in OKLCH (equivalent to HSL S:28–38%). <strong>This is the region that produces "impossible color" percepts from the original image.</strong> <button class="preset-pill" data-preset="middle-path">Apply middle path</button>
+  </div>
+</div>
+
+<!-- SPATIAL PARAMETERS -->
+<div class="r-section">
+  <h2>Spatial Parameters From Vision Science</h2>
+  <div class="spatial">
+    <div class="sp-block">
+      <div class="sp-label">Target area</div>
+      <div class="sp-val">5–10%</div>
+      <div class="sp-desc">Of total composition. Kellner &amp; Wachtler (2016): smaller targets are more susceptible to surround influence. Below 5% loses visual mass; above 15% target begins resisting induction.</div>
+    </div>
+    <div class="sp-block">
+      <div class="sp-label">Diameter ratio</div>
+      <div class="sp-val">≥ 3:1</div>
+      <div class="sp-desc">Surround to target. Area ratio ≥ 9:1. Ejima &amp; Takahashi (1983): induction saturates around this ratio. Beyond 5:1 yields diminishing returns but remains effective.</div>
+    </div>
+    <div class="sp-block">
+      <div class="sp-label">Edge type</div>
+      <div class="sp-val">Hard</div>
+      <div class="sp-desc">Sharp, clean boundary. At &gt;2–4 cycles/degree (fine stripes), contrast flips to assimilation — target shifts toward surround. For glow: keep edges hard and features large.</div>
+    </div>
+    <div class="sp-block">
+      <div class="sp-label">Surround texture</div>
+      <div class="sp-val">None</div>
+      <div class="sp-desc">Uniform solid color only. Shevell &amp; Wei (1998): chromatic contrast in remote regions attenuates induction through contrast gain control. Isolate the pair completely.</div>
+    </div>
+  </div>
+</div>
+
+<!-- RECIPE STEPS -->
+<div class="r-section">
+  <h2>The Recipe — Step by Step</h2>
+  <ol class="steps">
+    <li><div><strong>Choose key hue. Identify its Munsell home value lightness.</strong> Look up the hue in the table above. Set OKLCH L to the home value range — this is your maximum physical chroma starting point. Never deviate downward from home value to soften a color. The hue angle determines character. The saturation is non-negotiable. Red-orange (~8°) is the canonical example. Cyan (~188°) is the strongest cool-hue equivalent. <button class="preset-pill" data-preset="cold-fire">Try cold fire (cyan)</button></div></li>
+    <li><div><strong>Push key chroma to gamut boundary.</strong> In OKLCH, increase C until you hit the sRGB gamut edge (colors become invalid/clamp). Pull back 0.01–0.02 for safety. For <em>Display P3</em>, the boundary extends roughly 25–40% further — most significant for greens, reds, and magentas. Check H-K column: red-magenta and blue hues compound glow through perceived brightness beyond their measured luminance.</div></li>
+    <li><div><strong>Compute surround hue: key H + 180° in OKLCH.</strong> This is the true perceptual complement. The 180° displacement maximizes radial chroma amplification — pushing the key color outward in color space. Not the angle of maximum induction strength, but the angle of maximum chroma boost for an already-chromatic key. <button class="preset-pill" data-preset="full-recipe">Apply full recipe</button></div></li>
+    <li><div><strong>Set surround lightness. Choose your strategy.</strong> Strategy A (equiluminant): match surround L to key L exactly — maximum pure chromatic induction. Strategy B (dark surround): L 0.18–0.28 — compounds Hunt and H-K effects on screen. The pragmatic middle: <em>L 0.58–0.66</em> — mid-tone, lighter than the key, delivers strong induction plus partial Hunt effect. This is the "impossible color" region from the original image.</div></li>
+    <li><div><strong>Set surround chroma: C 0.06–0.12 in OKLCH.</strong> Below 0.06 (≈ HSL S:18%) you lose chromatic charge — simultaneous contrast weakens. Above 0.14 (≈ HSL S:42%) the surround begins competing for attention. The window is narrow. This is equivalent to HSL S:26–38% in the mid-tone range. The surround must feel flat — the key color must feel impossible.</div></li>
+    <li><div><strong>Apply spatial constraints.</strong> Target: 5–10% of total area. Surround diameter ≥ 3× target. Edges: hard, no gradient, no anti-aliasing at the boundary. Surround: uniform solid, no texture, no competing chromatic elements anywhere in the frame. Isolation is everything.</div></li>
+    <li><div><strong>Apply Bezold-Brücke compensation for warm hues at high brightness.</strong> Reds and oranges displayed at peak brightness shift toward yellow perceptually. If displaying a red key at maximum luminance, start the hue 5–8° more toward red-magenta than the target percept. Blues shift toward blue — typically beneficial for glow. Four invariant hues need no compensation: 478nm (blue), 503nm (green), 572nm (yellow), extraspectral purple.</div></li>
+    <li><div><strong>Implement with P3 media query.</strong> Use OKLCH throughout. Add a P3 override that pushes key C further into the wide gamut. Target OLED displays and dark ambient environments for maximum compound effect. HDR peak luminance (1000+ cd/m²) on target further amplifies Hunt and H-K mechanisms. <button class="preset-pill" data-preset="p3">Enable P3 output</button></div></li>
+  </ol>
+</div>
+
+<!-- CSS IMPLEMENTATION -->
+<div class="r-section">
+  <h2>CSS Implementation</h2>
+<div class="code-block"><span class="c-comment">/* BASE — sRGB fallback */</span>
+<span class="c-prop">.surround</span> {
+  <span class="c-prop">background</span>: <span class="c-fn">oklch</span>(<span class="c-val">0.62  0.09  205</span>); <span class="c-comment">/* mid-tone teal: L=.62, C=.09, H=205° */</span>
+}
+<span class="c-prop">.key</span> {
+  <span class="c-prop">background</span>: <span class="c-fn">oklch</span>(<span class="c-val">0.55  0.22  25</span>);  <span class="c-comment">/* red at home lightness, max sRGB chroma */</span>
+}
+
+<span class="c-comment">/* P3 OVERRIDE — wider gamut, stronger glow */</span>
+<span class="c-fn">@media</span> (<span class="c-prop">color-gamut: p3</span>) {
+  <span class="c-prop">.surround</span> {
+    <span class="c-prop">background</span>: <span class="c-fn">oklch</span>(<span class="c-val">0.60  0.12  205</span>); <span class="c-comment">/* more chroma in surround, P3 can hold it */</span>
+  }
+  <span class="c-prop">.key</span> {
+    <span class="c-prop">background</span>: <span class="c-fn">oklch</span>(<span class="c-val">0.55  0.28  25</span>);  <span class="c-comment">/* push chroma beyond sRGB boundary */</span>
+  }
+}
+
+<span class="c-comment">/* SPATIAL — enforce isolation */</span>
+<span class="c-prop">.composition</span> {
+  <span class="c-prop">position</span>: relative;
+  <span class="c-prop">isolation</span>: isolate; <span class="c-comment">/* no bleed from outside elements */</span>
+}
+<span class="c-prop">.key</span> {
+  <span class="c-prop">width</span>:  <span class="c-val">50%</span>;    <span class="c-comment">/* target ~5-10% of total area, adjust per layout */</span>
+  <span class="c-prop">height</span>: <span class="c-val">60%</span>;
+  <span class="c-prop">image-rendering</span>: <span class="c-val">pixelated</span>; <span class="c-comment">/* hard edges — no subpixel softening */</span>
+}</div>
+</div>
+
+<!-- WHAT KILLS IT -->
+<div class="r-section" style="white-space:normal">
+  <h2>What Destroys the Effect</h2>
+  <ul class="kills">
+    <li><div><strong>HSL for computing complements.</strong> HSL is not perceptually uniform — 180° in HSL is not the true perceptual complement. The blue-purple region is most distorted. Use OKLCH.</div></li>
+    <li><div><strong>Dark surrounds without H-K hues.</strong> Strategy B (dark surround) works best with H-K-strong key colors: red-magenta, blue, purple. For orange or yellow keys, H-K is minimal — dark surround loses more chromatic induction than it gains from the compound effect. Use equiluminant or mid-tone surround.</div></li>
+    <li><div><strong>Pulling key saturation down for "mood."</strong> Mood comes from hue angle. Saturation is the explosion. Rose, lavender, mint, denim can all feel calm at full OKLCH chroma because the hue character is calm — not because the chroma is reduced.</div></li>
+    <li><div><strong>Surround chroma above C:0.14 in OKLCH.</strong> The surround starts competing. The key's monopoly on saturation breaks down. Induction weakens as surround and target become perceptually similar.</div></li>
+    <li><div><strong>Soft edges or gradients at the boundary.</strong> Above 2–4 spatial cycles per degree, contrast flips to assimilation — the target shifts toward the surround instead of away. Keep the hard edge. No blurs, no feathering.</div></li>
+    <li><div><strong>Textured or variegated surrounds.</strong> Remote chromatic contrast (outside the immediate surround) attenuates induction through contrast gain control (Shevell &amp; Wei, 1998). Isolate the pair completely from all other chromatic elements.</div></li>
+    <li><div><strong>Multiple saturated elements.</strong> Each one dilutes the key's optical monopoly. One key color per composition. One explosion.</div></li>
+    <li><div><strong>Flat L:0.52 for all hues.</strong> Greens peak at L:0.55–0.62. Blues at L:0.38–0.50. Purples at L:0.52–0.62. Yellows at L:0.82–0.90. A universal lightness actively kills the chroma of half your palette.</div></li>
+    <li><div><strong>Bright ambient light.</strong> Reduces effective display contrast ratio, weakens H-K effect, weakens Hunt effect. The compound mechanisms are environment-dependent. Dark room amplifies everything.</div></li>
+  </ul>
+</div>
+
+<!-- REFERENCES -->
+<div class="r-section" style="white-space:normal">
+  <h2>Primary References</h2>
+  <ul class="refs">
+    <li><div><strong>Chevreul, M.E.</strong> (1839). <em>De la loi du contraste simultané des couleurs</em>. Pitois-Levrault, Paris. — Foundation of simultaneous contrast theory.</div></li>
+    <li><div><strong>Hering, E.</strong> (1878). <em>Zur Lehre vom Lichtsinn</em>. Gerolds Sohn, Vienna. — Opponent-color framework; lateral inhibition mechanism.</div></li>
+    <li><div><strong>Albers, J.</strong> (1963). <em>Interaction of Color</em>. Yale University Press. — Pedagogical systematization; Homage to the Square series as sustained experiment.</div></li>
+    <li><div><strong>Fairchild, M.D. &amp; Pirrotta, E.</strong> (1991). Predicting the lightness of chromatic object colors using CIELAB. <em>Color Research &amp; Application</em>, 16(6), 385–393. — Helmholtz-Kohlrausch quantitative model.</div></li>
+    <li><div><strong>Hunt, R.W.G.</strong> (1952). Light and dark adaptation and the perception of color. <em>Journal of the Optical Society of America</em>, 42(3), 190–199. — Hunt effect: colorfulness increases with luminance.</div></li>
+    <li><div><strong>Klauke, S. &amp; Wachtler, T.</strong> (2015). Tilt in color space: Hue changes induced by chromatic surrounds. <em>Journal of Vision</em>, 15(13):17. — Induction peaks at intermediate angles; 180° maximizes radial displacement.</div></li>
+    <li><div><strong>Ratnasingam, S. &amp; Anderson, E.J.</strong> (2017). What predicts the strength of simultaneous color contrast? <em>Journal of Vision</em>, 17(2):13. — Induction initially increases then declines; no induction at 180° for hue shift, but chroma boost continues.</div></li>
+    <li><div><strong>Gordon, J. &amp; Shapley, R.</strong> (2006). Brightness contrast inhibits chromatic induction. <em>Vision Research</em>, 46(8-9), 1060–1070. — Equiluminance maximizes chromatic induction.</div></li>
+    <li><div><strong>Ekroll, V., Faul, F. &amp; Wendt, G.</strong> (2011). The strengths of simultaneous color contrast and the gamut expansion effect. <em>Vision Research</em>, 51, 311–322. — Gamut expansion effect.</div></li>
+    <li><div><strong>Park, D.S.</strong> (2022). Determining the color appearance of Helmholtz-Kohlrausch effect for self-emissive displays. <em>Journal of Information Display</em>. — H-K significantly stronger on OLED vs. reflective surfaces.</div></li>
+    <li><div><strong>High, R., Green, P. &amp; Nussbaum, P.</strong> (2023). The Helmholtz-Kohlrausch effect on display-based light colors. <em>Color Research &amp; Application</em>, 48(2), 167–177. — H-K peak at red-magenta (~330° CIELAB).</div></li>
+    <li><div><strong>Shevell, S.K. &amp; Wei, J.</strong> (1998). Chromatic induction with remote chromatic contrast varied. <em>Vision Research</em>, 38, 1561–1566. — Remote contrast attenuates induction; surround uniformity essential.</div></li>
+    <li><div><strong>Churchland, P.M.</strong> (2005). Chimerical colors: some phenomenological predictions from cognitive neuroscience. <em>Philosophical Psychology</em>, 18(5), 527–560. — "Hyperbolic colors" — perceived chroma exceeding physical gamut via adaptation.</div></li>
+    <li><div><strong>Munsell, A.H.</strong> (1929). <em>Book of Color</em>. Munsell Color Co. — Home values: per-hue optimal lightness for maximum chroma.</div></li>
+  </ul>
+</div>
+  <span>Chromatic Induction Generator — Research Edition v2</span>
+  <span>Simultaneous contrast · Chevreul 1839 through Klauke &amp; Wachtler 2015</span>
+</div>
+
+</div><!-- /research-inner -->
+</div><!-- /research -->
+<!-- EXPORT MODAL -->
+<div id="export-modal">
+  <div id="export-box">
+    <button id="export-close">esc / close</button>
+    <div class="export-title">Export pair</div>
+
+    <div class="export-section">
+      <div class="export-section-label">CSS custom properties</div>
+      <div class="export-code" id="ex-css"></div>
+      <button class="export-btn" id="ex-css-copy">Copy</button>
+    </div>
+
+    <div class="export-section">
+      <div class="export-section-label">Tailwind config</div>
+      <div class="export-code" id="ex-tw"></div>
+      <button class="export-btn" id="ex-tw-copy">Copy</button>
+    </div>
+
+    <div class="export-section">
+      <div class="export-section-label">OKLCH raw values</div>
+      <div class="export-code" id="ex-ok"></div>
+      <button class="export-btn" id="ex-ok-copy">Copy</button>
+    </div>
+
+    <button id="ex-download">⬇ Download .css</button>
+  </div>
+</div>
+
+</body>
+</html>

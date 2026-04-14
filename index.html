@@ -1001,6 +1001,34 @@
 
 <div id="toast"></div>
 
+<!-- EXPORT MODAL -->
+<div id="export-modal">
+  <div id="export-box">
+    <button id="export-close">esc / close</button>
+    <div class="export-title">Export pair</div>
+
+    <div class="export-section">
+      <div class="export-section-label">CSS custom properties</div>
+      <div class="export-code" id="ex-css"></div>
+      <button class="export-btn" id="ex-css-copy">Copy</button>
+    </div>
+
+    <div class="export-section">
+      <div class="export-section-label">Tailwind config</div>
+      <div class="export-code" id="ex-tw"></div>
+      <button class="export-btn" id="ex-tw-copy">Copy</button>
+    </div>
+
+    <div class="export-section">
+      <div class="export-section-label">OKLCH raw values</div>
+      <div class="export-code" id="ex-ok"></div>
+      <button class="export-btn" id="ex-ok-copy">Copy</button>
+    </div>
+
+    <button id="ex-download">⬇ Download .css</button>
+  </div>
+</div>
+
 <script>
   /* ── OKLCH math ──────────────────────────────────────── */
   function hslToRgb01(h, s, l) {
@@ -2107,33 +2135,6 @@
 
 </div><!-- /research-inner -->
 </div><!-- /research -->
-<!-- EXPORT MODAL -->
-<div id="export-modal">
-  <div id="export-box">
-    <button id="export-close">esc / close</button>
-    <div class="export-title">Export pair</div>
-
-    <div class="export-section">
-      <div class="export-section-label">CSS custom properties</div>
-      <div class="export-code" id="ex-css"></div>
-      <button class="export-btn" id="ex-css-copy">Copy</button>
-    </div>
-
-    <div class="export-section">
-      <div class="export-section-label">Tailwind config</div>
-      <div class="export-code" id="ex-tw"></div>
-      <button class="export-btn" id="ex-tw-copy">Copy</button>
-    </div>
-
-    <div class="export-section">
-      <div class="export-section-label">OKLCH raw values</div>
-      <div class="export-code" id="ex-ok"></div>
-      <button class="export-btn" id="ex-ok-copy">Copy</button>
-    </div>
-
-    <button id="ex-download">⬇ Download .css</button>
-  </div>
-</div>
 
 </body>
 </html>

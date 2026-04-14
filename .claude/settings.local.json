@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth:*)",
+      "Bash(powershell -Command \"Get-Command gh | Select-Object -ExpandProperty Source\")",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" repo create chromatic-induction --public --source=. --remote=origin --push)",
+      "Bash('/c/Program Files/GitHub CLI/gh.exe' api repos/Goodbyehorses/chromatic-induction/pages -X POST --field 'source[branch]=master' --field 'source[path]=/')"
+    ]
+  }
+}

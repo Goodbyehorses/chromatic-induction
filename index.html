@@ -771,6 +771,16 @@
   }
   .pattern-tile:hover  { outline-color: rgba(255,255,255,0.18); }
   .pattern-tile.active { outline-color: rgba(255,255,255,0.65); }
+  .pattern-tile-key {
+    width: 44%; height: 58%;
+    flex-shrink: 0; pointer-events: none;
+  }
+  .pattern-tile-label {
+    position: absolute; bottom: 7px; left: 9px;
+    font-size: 11px; letter-spacing: 0.06em;
+    color: rgba(0,0,0,0.7); pointer-events: none;
+    background: rgba(255,255,255,0.35); padding: 1px 5px;
+  }
 
   /* ═══════════════════════════════
      EXPORT MODAL
@@ -1163,16 +1173,16 @@
   let boostTiles = null;
   function renderBoostPanel() {
     if (!S.boost) return;
-    const v  = genVals();
-    const kL = S.munsell ? munsellL(v.kH) : v.kL;
-    const kCSS = `hsl(${v.kH},${v.kS}%,${kL}%)`;
+    const v = genVals();
+    // Same color pipeline as the generator, so OKLCH/P3/Munsell apply here too
+    const { kCSS } = buildColors();
 
     if (!boostTiles) {
       const container = document.getElementById('boost-swatches');
       boostTiles = BOOST_ANGLES.map(({ deg, label, type }) => {
         const el = document.createElement('div');
         el.className = 'boost-swatch';
-        el.title = `Click to set offset to ${deg}° · Shift+click to copy bg hex`;
+        el.title = `Click to set offset to ${deg}° · Shift+click or right-click to copy bg color`;
         el.innerHTML = `
           <div class="boost-swatch-key"></div>
           <div class="boost-meta">
@@ -1182,15 +1192,15 @@
           <span class="boost-copy"></span>`;
         el.addEventListener('click', (e) => {
           if (e.shiftKey) {
-            copyStr(toHex(el.dataset.bg));
+            copyStr(el.dataset.copy);
           } else {
             document.getElementById('bgO').value = deg;
             updateGen();
           }
         });
-        // Right-click copies bg hex
+        // Right-click copies bg color
         el.addEventListener('contextmenu', e => {
-          e.preventDefault(); copyStr(toHex(el.dataset.bg));
+          e.preventDefault(); copyStr(el.dataset.copy);
         });
         container.appendChild(el);
         return el;
@@ -1198,9 +1208,9 @@
     }
 
     BOOST_ANGLES.forEach(({ deg }, i) => {
-      const el   = boostTiles[i];
-      const bCSS = `hsl(${(v.kH + deg) % 360},${v.bS}%,${v.bL}%)`;
-      el.dataset.bg = bCSS;
+      const el = boostTiles[i];
+      const { bCSS, bCopy } = buildColors(deg);
+      el.dataset.copy = bCopy; // hex in HSL mode, exact oklch() otherwise
       el.style.background = bCSS;
       el.querySelector('.boost-swatch-key').style.background = kCSS;
       el.querySelector('.boost-copy').textContent = toHex(bCSS);
@@ -1219,18 +1229,21 @@
   }
 
   /* ── Build colors from current state ────────────────── */
-  function buildColors() {
+  // `offset` overrides the bgO slider (used by the boost palette).
+  // Also returns kOk/bOk: the OKLCH values of the colors actually shown.
+  function buildColors(offset) {
     const v = genVals();
+    const o = offset ?? v.o;
     const kL = S.munsell ? munsellL(v.kH) : v.kL;
 
-    let kCSS, bCSS, kCopy, bCopy, kSub, bSub;
+    let kCSS, bCSS, kCopy, bCopy, kSub, bSub, kOkOut, bOkOut;
 
     if (S.oklch || S.p3) {
       // Always go through OKLCH when either switch is active
       const kOk  = hslToOklch(v.kH, v.kS, kL);
-      const bgOk = hslToOklch((v.kH + v.o) % 360, v.bS, v.bL);
+      const bgOk = hslToOklch((v.kH + o) % 360, v.bS, v.bL);
       // Background hue in OKLCH space (offset applied in perceptual space)
-      const bgH  = S.oklch ? (kOk.H + v.o) % 360 : bgOk.H;
+      const bgH  = S.oklch ? (kOk.H + o) % 360 : bgOk.H;
 
       const kC = S.p3 ? Math.min(kOk.C * 1.22, 0.38) : kOk.C;
       const bC = S.p3 ? Math.min(bgOk.C * 1.22, 0.20) : bgOk.C;
@@ -1239,21 +1252,25 @@
       bCSS  = oklchToCSS(bgOk.L, bC, bgH);
       kCopy = kCSS;
       bCopy = bCSS;
+      kOkOut = { L: kOk.L,  C: kC, H: kOk.H };
+      bOkOut = { L: bgOk.L, C: bC, H: bgH };
 
       const modeTag = [S.oklch && 'oklch', S.p3 && 'p3'].filter(Boolean).join('+');
       kSub  = `${modeTag}  L:${kOk.L.toFixed(2)} C:${kC.toFixed(3)} H:${kOk.H.toFixed(0)}°${S.munsell ? '  munsell' : ''}`;
-      bSub  = `${modeTag}  complement  +${v.o}°`;
+      bSub  = `${modeTag}  complement  +${o}°`;
     } else {
-      const bgH = (v.kH + v.o) % 360;
+      const bgH = (v.kH + o) % 360;
       kCSS  = `hsl(${v.kH},${v.kS}%,${kL}%)`;
       bCSS  = `hsl(${bgH},${v.bS}%,${v.bL}%)`;
       kCopy = toHex(kCSS);
       bCopy = toHex(bCSS);
+      kOkOut = hslToOklch(v.kH, v.kS, kL);
+      bOkOut = hslToOklch(bgH, v.bS, v.bL);
       kSub  = `hsl(${v.kH}, ${v.kS}, ${kL})${S.munsell ? '  munsell' : ''}`;
       bSub  = `hsl(${bgH}, ${v.bS}, ${v.bL})`;
     }
 
-    return { kCSS, bCSS, kCopy, bCopy, kSub, bSub, kL };
+    return { kCSS, bCSS, kCopy, bCopy, kSub, bSub, kL, kOk: kOkOut, bOk: bOkOut };
   }
 
   /* ── Update preview ─────────────────────────────────── */
@@ -1300,7 +1317,7 @@
     // Pattern preview & strip
     const bAlt = buildBgAlt(v, kL);
     gPrev.style.background = buildBgStyle(bCSS, bAlt, currentPattern);
-    if (S.pattern) renderPatternStrip(kCSS, bCSS);
+    if (S.pattern) renderPatternStrip(kCSS, bCSS, bAlt);
 
     // Hue wheel
     updateHueWheel(v.kH);
@@ -1489,9 +1506,12 @@
 
   document.addEventListener('keydown', e => {
     if (e.code === 'Space') {
-      const lbOpen = lb.classList.contains('open');
-      // Fire randomize when: lightbox is open (any focus), OR focus is not on a control
-      if (lbOpen || !['INPUT','TEXTAREA','BUTTON'].includes(e.target.tagName)) {
+      // Randomize unless focus is on a control that handles Space itself
+      // (inputs, buttons, and role="button" swatches that copy on Space).
+      // The lightbox focuses itself on open, so Space still randomizes there.
+      const ownsSpace = ['INPUT','TEXTAREA','BUTTON','SELECT'].includes(e.target.tagName)
+        || e.target.getAttribute?.('role') === 'button';
+      if (!ownsSpace) {
         e.preventDefault();
         randomImpossible();
       }
@@ -1695,7 +1715,9 @@
   }
 
   let patternTilesCreated = false;
-  function renderPatternStrip(kCSS, bCSS) {
+  // Each tile previews exactly what clicking it applies: the surround
+  // pattern (bg + bAlt, same as the main preview) with the key on top.
+  function renderPatternStrip(kCSS, bCSS, bAlt) {
     const container = document.getElementById('pattern-tiles');
     if (!patternTilesCreated) {
       container.innerHTML = '';
@@ -1704,6 +1726,7 @@
         tile.className = 'pattern-tile';
         tile.dataset.pid = id;
         tile.title = `${label} — ${note}`;
+        tile.innerHTML = `<div class="pattern-tile-key"></div><span class="pattern-tile-label">${label}</span>`;
         tile.addEventListener('click', () => { currentPattern = id; updateGen(); });
         container.appendChild(tile);
       });
@@ -1711,7 +1734,8 @@
     }
     container.querySelectorAll('.pattern-tile').forEach(tile => {
       const id = tile.dataset.pid;
-      tile.style.background = buildBgStyle(bCSS, kCSS, id);
+      tile.style.background = buildBgStyle(bCSS, bAlt, id);
+      tile.firstElementChild.style.background = kCSS;
       tile.classList.toggle('active', id === currentPattern);
     });
   }
@@ -1793,20 +1817,38 @@
   }
 
   /* ── Animation ───────────────────────────────────────── */
-  let animating = false, animRAF = null;
+  // Speeds are degrees per frame at 60 fps; ticks scale by elapsed time so
+  // the rate is the same on 120 Hz displays.
+  let animating = false, animRAF = null, animLast = 0;
   const ANIM_SPEEDS = { slow: 0.28, med: 0.85, fast: 2.4 };
   let animSpeed = ANIM_SPEEDS.slow;
+  // The hue slider only stores whole degrees, so the fractional hue is
+  // tracked here — otherwise sub-1° steps round back to the same value.
+  let animHue = 0;
 
   const btnAnim = document.getElementById('btn-anim');
   const animSpeedEl = document.getElementById('anim-speed');
+  btnAnim.setAttribute('aria-pressed', 'false');
 
-  btnAnim.addEventListener('click', () => {
-    if (animating) return;
+  function startAnim() {
     animating = true;
+    animHue = +document.getElementById('kH').value;
+    animLast = performance.now();
     btnAnim.classList.add('playing');
+    btnAnim.textContent = '■ stop';
+    btnAnim.setAttribute('aria-pressed', 'true');
     animSpeedEl.classList.add('visible');
     animRAF = requestAnimationFrame(animTick);
-  });
+  }
+  function stopAnim() {
+    animating = false;
+    cancelAnimationFrame(animRAF);
+    btnAnim.classList.remove('playing');
+    btnAnim.textContent = '▶ animate';
+    btnAnim.setAttribute('aria-pressed', 'false');
+    animSpeedEl.classList.remove('visible');
+  }
+  btnAnim.addEventListener('click', () => (animating ? stopAnim() : startAnim()));
 
   document.querySelectorAll('.anim-spd').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1816,10 +1858,15 @@
     });
   });
 
-  function animTick() {
+  function animTick(now) {
     if (!animating) return;
     const slider = document.getElementById('kH');
-    const next = (+slider.value + animSpeed) % 360;
+    // If the user moved the hue (slider, wheel, Space) since the last frame, continue from there
+    if (Math.round(animHue) % 360 !== +slider.value) animHue = +slider.value;
+    const dt = Math.min(now - animLast, 100); // clamp after tab switches
+    animLast = now;
+    animHue = (animHue + animSpeed * dt / (1000 / 60)) % 360;
+    const next = Math.round(animHue) % 360;
     slider.value = next;
     if (S.munsell) document.getElementById('kL').value = munsellL(next);
     updateGen();
@@ -1855,19 +1902,28 @@
   /* ── Export modal ────────────────────────────────────── */
   const exportModal = document.getElementById('export-modal');
 
-  function openExport() {
-    const { kCopy, bCopy } = buildColors();
-    const v = genVals();
-    const kL = S.munsell ? munsellL(v.kH) : v.kL;
-    const kOk = hslToOklch(v.kH, v.kS, kL);
-    const bgH = (v.kH + v.o) % 360;
-    const bOk = hslToOklch(bgH, v.bS, v.bL);
+  // One CSS builder for both the copy panel and the downloaded file, using
+  // the documented --cig-* names. With P3 on, :root gets an sRGB hex
+  // fallback and wide-gamut displays get the expanded oklch() values.
+  function exportCSS() {
+    const { kCSS, bCSS, kCopy, bCopy } = buildColors();
+    const rules = `.surround  { background: var(--cig-bg);  }\n.key-color { background: var(--cig-key); }`;
+    if (!S.p3) {
+      return `:root {\n  --cig-bg:  ${bCopy};\n  --cig-key: ${kCopy};\n}\n\n${rules}`;
+    }
+    return `:root {\n  /* sRGB fallback */\n  --cig-bg:  ${toHex(bCSS)};\n  --cig-key: ${toHex(kCSS)};\n}\n\n` +
+           `@media (color-gamut: p3) {\n  :root {\n    --cig-bg:  ${bCopy};\n    --cig-key: ${kCopy};\n  }\n}\n\n${rules}`;
+  }
 
-    document.getElementById('ex-css').textContent =
-`:root {\n  --ic-bg:  ${bCopy};\n  --ic-key: ${kCopy};\n}\n\n.surround  { background: var(--ic-bg);  }\n.key-color { background: var(--ic-key); }`;
+  function openExport() {
+    // kOk/bOk are the OKLCH values of the colors actually shown, including
+    // the perceptual offset (OKLCH toggle) and P3 chroma expansion
+    const { kCopy, bCopy, kOk, bOk } = buildColors();
+
+    document.getElementById('ex-css').textContent = exportCSS();
 
     document.getElementById('ex-tw').textContent =
-`// tailwind.config.js\nmodule.exports = {\n  theme: { extend: { colors: {\n    'ic-bg':  '${bCopy}',\n    'ic-key': '${kCopy}',\n  }}}\n}`;
+`// tailwind.config.js\nmodule.exports = {\n  theme: { extend: { colors: {\n    'cig-bg':  '${bCopy}',\n    'cig-key': '${kCopy}',\n  }}}\n}`;
 
     document.getElementById('ex-ok').textContent =
 `bg   oklch(${bOk.L.toFixed(3)} ${bOk.C.toFixed(4)} ${bOk.H.toFixed(1)})\nkey  oklch(${kOk.L.toFixed(3)} ${kOk.C.toFixed(4)} ${kOk.H.toFixed(1)})`;
@@ -1884,11 +1940,11 @@
   document.getElementById('ex-ok-copy').addEventListener('click',  () => copyStr(document.getElementById('ex-ok').textContent));
 
   document.getElementById('ex-download').addEventListener('click', () => {
-    const { kCopy, bCopy } = buildColors();
-    const css = `/* Chromatic Induction Generator — generated pair */\n:root {\n  --cig-bg:  ${bCopy};\n  --cig-key: ${kCopy};\n}\n\n.surround  { background: var(--cig-bg); }\n.key-color { background: var(--cig-key); }\n\n@media (color-gamut: p3) {\n  /* Add P3-expanded values here for wide-gamut displays */\n}\n`;
+    const css = `/* Chromatic Induction Generator — generated pair */\n${exportCSS()}\n`;
     const blob = new Blob([css], { type: 'text/css' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = 'chromatic-induction.css'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   });
 
   /* ── URL state ───────────────────────────────────────── */

@@ -310,6 +310,7 @@
     z-index: 9000; align-items: center; justify-content: center;
   }
   #lightbox.open { display: flex; }
+  #lightbox:focus { outline: none; }
   #lb-bg {
     position: absolute; inset: 0; z-index: 1; cursor: pointer;
   }
@@ -989,7 +990,7 @@
 <div class="pair" style="background:hsl(220,36%,60%);"><span class="n">28</span><span class="lbl">gilded steel</span><div class="key-block" style="background:hsl(46,100%,52%);"></div><div class="meta"><span><span class="sw" style="background:hsl(220,36%,60%)"></span>hsl(220,36,60)</span><span class="k"><span class="sw" style="background:hsl(46,100%,52%)"></span>hsl(46,100,52)</span></div><button class="expand-btn">⤢</button></div>
 
 <!-- LIGHTBOX -->
-<div id="lightbox" role="dialog" aria-modal="true" aria-label="Color pair expanded view">
+<div id="lightbox" role="dialog" aria-modal="true" aria-label="Color pair expanded view" tabindex="-1">
   <div id="lb-bg"></div>
   <div id="lb-key"></div>
   <button id="lb-close" aria-label="Close fullscreen view (Esc)">esc / close</button>
@@ -1002,10 +1003,10 @@
 <div id="toast"></div>
 
 <!-- EXPORT MODAL -->
-<div id="export-modal">
+<div id="export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
   <div id="export-box">
-    <button id="export-close">esc / close</button>
-    <div class="export-title">Export pair</div>
+    <button id="export-close" aria-label="Close export (Esc)">esc / close</button>
+    <div class="export-title" id="export-title">Export pair</div>
 
     <div class="export-section">
       <div class="export-section-label">CSS custom properties</div>
@@ -1073,9 +1074,9 @@
 
   /* ── H-K rating ─────────────────────────────────────── */
   function hkRating(h) {
-    if (h >= 310 || h <= 10)            return 3; // red-magenta: max
-    if (h >= 245 && h < 315)            return 3; // blue-violet: max
-    if ((h >= 160 && h < 230) || (h >= 330 && h < 360)) return 2;
+    // 245–360 covers blue-violet through red-magenta; 0–10 wraps red: max
+    if (h >= 245 || h <= 10)  return 3;
+    if (h >= 160 && h < 230)  return 2; // cyan-blue: medium
     return 1;
   }
   function hkLabel(h) {
@@ -1084,11 +1085,27 @@
   }
 
   /* ── utils ───────────────────────────────────────────── */
+  // sRGB hex via a single reusable 1×1 canvas, memoised per CSS string.
+  // Note: wide-gamut (P3) colors are clipped to sRGB here — callers that
+  // need the exact value should use the CSS string instead.
+  const hexCache = new Map();
+  let hexCtx = null;
   function toHex(css) {
-    const c = document.createElement('canvas'); c.width = c.height = 1;
-    const x = c.getContext('2d'); x.fillStyle = css; x.fillRect(0,0,1,1);
-    const [r,g,b] = x.getImageData(0,0,1,1).data;
-    return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('').toUpperCase();
+    const cached = hexCache.get(css);
+    if (cached) return cached;
+    if (!hexCtx) {
+      const c = document.createElement('canvas'); c.width = c.height = 1;
+      hexCtx = c.getContext('2d', { willReadFrequently: true });
+    }
+    hexCtx.clearRect(0, 0, 1, 1);
+    hexCtx.fillStyle = '#000'; // fallback if css is unparseable
+    hexCtx.fillStyle = css;
+    hexCtx.fillRect(0, 0, 1, 1);
+    const [r,g,b] = hexCtx.getImageData(0,0,1,1).data;
+    const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('').toUpperCase();
+    if (hexCache.size > 4000) hexCache.clear();
+    hexCache.set(css, hex);
+    return hex;
   }
   let tt;
   function toast(msg) {
@@ -1141,45 +1158,53 @@
     { deg: 180, label: '180°', type: 'chroma boost  pure' },
   ];
 
+  // Tiles are built once and then only restyled, so animation frames
+  // don't rebuild DOM or re-bind listeners.
+  let boostTiles = null;
   function renderBoostPanel() {
     if (!S.boost) return;
     const v  = genVals();
     const kL = S.munsell ? munsellL(v.kH) : v.kL;
-    const container = document.getElementById('boost-swatches');
-    const currentOffset = v.o;
-    container.innerHTML = '';
+    const kCSS = `hsl(${v.kH},${v.kS}%,${kL}%)`;
 
-    BOOST_ANGLES.forEach(({ deg, label, type }) => {
-      const bgH  = (v.kH + deg) % 360;
-      const kCSS = `hsl(${v.kH},${v.kS}%,${kL}%)`;
-      const bCSS = `hsl(${bgH},${v.bS}%,${v.bL}%)`;
+    if (!boostTiles) {
+      const container = document.getElementById('boost-swatches');
+      boostTiles = BOOST_ANGLES.map(({ deg, label, type }) => {
+        const el = document.createElement('div');
+        el.className = 'boost-swatch';
+        el.title = `Click to set offset to ${deg}° · Shift+click to copy bg hex`;
+        el.innerHTML = `
+          <div class="boost-swatch-key"></div>
+          <div class="boost-meta">
+            <span class="boost-angle">${label}</span>
+            <span class="boost-type">${type}</span>
+          </div>
+          <span class="boost-copy"></span>`;
+        el.addEventListener('click', (e) => {
+          if (e.shiftKey) {
+            copyStr(toHex(el.dataset.bg));
+          } else {
+            document.getElementById('bgO').value = deg;
+            updateGen();
+          }
+        });
+        // Right-click copies bg hex
+        el.addEventListener('contextmenu', e => {
+          e.preventDefault(); copyStr(toHex(el.dataset.bg));
+        });
+        container.appendChild(el);
+        return el;
+      });
+    }
 
-      const el = document.createElement('div');
-      el.className = 'boost-swatch' + (deg === currentOffset ? ' active' : '');
+    BOOST_ANGLES.forEach(({ deg }, i) => {
+      const el   = boostTiles[i];
+      const bCSS = `hsl(${(v.kH + deg) % 360},${v.bS}%,${v.bL}%)`;
+      el.dataset.bg = bCSS;
       el.style.background = bCSS;
-      el.title = `Click to set offset to ${deg}° · Shift+click to copy bg hex`;
-      el.innerHTML = `
-        <div class="boost-swatch-key" style="background:${kCSS}"></div>
-        <div class="boost-meta">
-          <span class="boost-angle">${label}</span>
-          <span class="boost-type">${type}</span>
-        </div>
-        <span class="boost-copy">${toHex(bCSS)}</span>`;
-
-      el.addEventListener('click', (e) => {
-        if (e.shiftKey) {
-          copyStr(toHex(bCSS));
-        } else {
-          document.getElementById('bgO').value = deg;
-          updateGen();
-        }
-      });
-      // Right-click or ctrl+click copies bg hex
-      el.addEventListener('contextmenu', e => {
-        e.preventDefault(); copyStr(toHex(bCSS));
-      });
-
-      container.appendChild(el);
+      el.querySelector('.boost-swatch-key').style.background = kCSS;
+      el.querySelector('.boost-copy').textContent = toHex(bCSS);
+      el.classList.toggle('active', deg === v.o);
     });
   }
   function genVals() {
@@ -1274,9 +1299,8 @@
 
     // Pattern preview & strip
     const bAlt = buildBgAlt(v, kL);
-    const hexB = toHex(bCSS), hexA = toHex(bAlt);
-    gPrev.style.background = buildBgStyle(bCSS, bAlt, currentPattern, hexB, hexA);
-    renderPatternStrip(kCSS, bCSS, bAlt, hexB, hexA);
+    gPrev.style.background = buildBgStyle(bCSS, bAlt, currentPattern);
+    if (S.pattern) renderPatternStrip(kCSS, bCSS);
 
     // Hue wheel
     updateHueWheel(v.kH);
@@ -1308,8 +1332,8 @@
   });
   document.getElementById('gen-expand').addEventListener('click', e => {
     e.stopPropagation();
-    const { kCSS, bCSS } = buildColors();
-    openLB(bCSS, kCSS);
+    const { kCSS, bCSS, kCopy, bCopy } = buildColors();
+    openLB(bCSS, kCSS, bCopy, kCopy);
   });
 
   /* ── Add to palette ──────────────────────────────────── */
@@ -1320,6 +1344,9 @@
     const p = document.createElement('div');
     p.className = 'pair';
     p.style.background = bCSS;
+    // Keep the exact (possibly OKLCH/P3) values for copying
+    p.dataset.bgCopy  = bCopy;
+    p.dataset.keyCopy = kCopy;
     p.innerHTML = `
       <span class="n">${String(count).padStart(2,'0')}</span>
       <span class="lbl">custom</span>
@@ -1339,40 +1366,82 @@
   const lbBg  = document.getElementById('lb-bg');
   const lbKey = document.getElementById('lb-key');
 
-  function openLB(bg, key) {
+  /* ── Dialog focus handling ──────────────────────────── */
+  // Moves focus into a dialog on open, keeps Tab inside it, and returns
+  // focus to the triggering element on close.
+  let dialogReturnFocus = null;
+  function dialogFocusables(el) {
+    return [...el.querySelectorAll('button, [tabindex="0"]')];
+  }
+  function openDialog(el, initialFocus) {
+    if (el.classList.contains('open')) return;
+    dialogReturnFocus = document.activeElement;
+    el.classList.add('open');
+    (initialFocus || dialogFocusables(el)[0] || el).focus();
+  }
+  function closeDialog(el) {
+    if (!el.classList.contains('open')) return;
+    el.classList.remove('open');
+    if (dialogReturnFocus && document.contains(dialogReturnFocus)) dialogReturnFocus.focus();
+    dialogReturnFocus = null;
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const dlg = [lb, exportModal].find(d => d.classList.contains('open'));
+    if (!dlg) return;
+    const f = dialogFocusables(dlg);
+    if (!f.length) { e.preventDefault(); return; }
+    const first = f[0], last = f[f.length - 1];
+    if (!f.includes(document.activeElement)) {
+      e.preventDefault(); (e.shiftKey ? last : first).focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  });
+
+  // Exact values to copy from the lightbox. Defaults to sRGB hex; the
+  // generator passes its OKLCH/P3 strings so wide-gamut colors aren't clipped.
+  let lbCopy = { bg: '', key: '' };
+  function openLB(bg, key, bgCopy = toHex(bg), keyCopy = toHex(key)) {
     lbBg.style.background  = bg;
     lbKey.style.background = key;
+    lbCopy = { bg: bgCopy, key: keyCopy };
     document.getElementById('lb-bg-sw').style.background  = bg;
     document.getElementById('lb-key-sw').style.background = key;
-    document.getElementById('lb-bg-hex').textContent  = toHex(bg);
-    document.getElementById('lb-key-hex').textContent = toHex(key);
-    lb.classList.add('open');
+    document.getElementById('lb-bg-hex').textContent  = bgCopy;
+    document.getElementById('lb-key-hex').textContent = keyCopy;
+    // Focus the dialog itself (not the close button) so Space still randomizes
+    openDialog(lb, lb);
   }
-  function closeLB() { lb.classList.remove('open'); }
+  function closeLB() { closeDialog(lb); }
 
   document.getElementById('lb-close').addEventListener('click', closeLB);
   lbBg.addEventListener('click', closeLB);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLB(); exportModal.classList.remove('open'); } });
-  lbKey.addEventListener('click', e => { e.stopPropagation(); copyStr(toHex(lbKey.style.background)); });
-  addActivation('lb-bg-btn',  () => copyStr(toHex(lbBg.style.background)));
-  addActivation('lb-key-btn', () => copyStr(toHex(lbKey.style.background)));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLB(); closeDialog(exportModal); } });
+  lbKey.addEventListener('click', e => { e.stopPropagation(); copyStr(lbCopy.key); });
+  addActivation('lb-bg-btn',  () => copyStr(lbCopy.bg));
+  addActivation('lb-key-btn', () => copyStr(lbCopy.key));
 
   /* ── Wire pair cards ─────────────────────────────────── */
   function wirePair(p) {
     const k = p.querySelector('.key-block');
     const b = p.querySelector('.expand-btn');
     const name = p.querySelector('.lbl') ? p.querySelector('.lbl').textContent : 'color pair';
+    const bgCopy  = () => p.dataset.bgCopy  || toHex(p.style.background);
+    const keyCopy = () => p.dataset.keyCopy || toHex(k.style.background);
     b.setAttribute('aria-label', `Expand ${name} fullscreen`);
     k.setAttribute('role', 'button');
     k.setAttribute('tabindex', '0');
     k.setAttribute('aria-label', `Copy key color for ${name}`);
-    k.addEventListener('click', e => { e.stopPropagation(); copyStr(toHex(k.style.background)); });
-    k.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyStr(toHex(k.style.background)); } });
+    k.addEventListener('click', e => { e.stopPropagation(); copyStr(keyCopy()); });
+    k.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyStr(keyCopy()); } });
     p.addEventListener('click', e => {
       if (e.target === k || e.target === b) return;
-      copyStr(toHex(p.style.background));
+      copyStr(bgCopy());
     });
-    b.addEventListener('click', e => { e.stopPropagation(); openLB(p.style.background, k.style.background); });
+    b.addEventListener('click', e => { e.stopPropagation(); openLB(p.style.background, k.style.background, bgCopy(), keyCopy()); });
   }
 
   document.querySelectorAll('.pair').forEach(wirePair);
@@ -1384,7 +1453,7 @@
 
     // Key: always max saturation; lightness from Munsell if on, else recipe midpoint
     const kS = 92 + Math.floor(Math.random() * 8); // 92–100
-    const kL = S.munsell ? munsellL(kH) : munsellL(kH); // always use Munsell for randomizer — it guarantees max chroma
+    const kL = munsellL(kH); // always use Munsell for randomizer — it guarantees max chroma
 
     // Background: narrow sweet spot from recipe — S:28–38%, L:58–66%
     const bS = 28 + Math.floor(Math.random() * 11); // 28–38
@@ -1399,15 +1468,12 @@
     document.getElementById('bgS').value = bS;
     document.getElementById('bgL').value = bL;
 
-    // If Munsell is on, sync the slider display
-    if (S.munsell) document.getElementById('kL').value = kL;
-
     updateGen();
 
     // If lightbox is open, update it with the new pair
     if (lb.classList.contains('open')) {
-      const { bCSS, kCSS } = buildColors();
-      openLB(bCSS, kCSS);
+      const { bCSS, kCSS, bCopy, kCopy } = buildColors();
+      openLB(bCSS, kCSS, bCopy, kCopy);
     }
 
     // Flash the hint
@@ -1604,9 +1670,10 @@
     return `hsl(${bgH},${Math.max(0, v.bS - 10)}%,${Math.min(90, v.bL + 16)}%)`;
   }
 
-  function buildBgStyle(bCSS, bAlt, pattern, hexB, hexA) {
-    const h1 = hexB || toHex(bCSS);
-    const h2 = hexA || toHex(bAlt);
+  function buildBgStyle(bCSS, bAlt, pattern) {
+    // SVG fills take the CSS color strings directly (hsl/oklch), so P3
+    // colors aren't clipped to sRGB hex in the checker/dots patterns.
+    const h1 = bCSS, h2 = bAlt;
     switch (pattern) {
       case 'coarse':
         return `repeating-linear-gradient(90deg, ${bCSS} 0 22px, ${bAlt} 22px 44px)`;
@@ -1628,7 +1695,7 @@
   }
 
   let patternTilesCreated = false;
-  function renderPatternStrip(kCSS, bCSS, bAlt, hexB, hexA) {
+  function renderPatternStrip(kCSS, bCSS) {
     const container = document.getElementById('pattern-tiles');
     if (!patternTilesCreated) {
       container.innerHTML = '';
@@ -1642,10 +1709,9 @@
       });
       patternTilesCreated = true;
     }
-    const hexK = toHex(kCSS);
     container.querySelectorAll('.pattern-tile').forEach(tile => {
       const id = tile.dataset.pid;
-      tile.style.background = buildBgStyle(bCSS, kCSS, id, hexB, hexK);
+      tile.style.background = buildBgStyle(bCSS, kCSS, id);
       tile.classList.toggle('active', id === currentPattern);
     });
   }
@@ -1690,7 +1756,10 @@
     if (S.munsell) document.getElementById('kL').value = munsellL(h);
     updateGen();
   });
-  hueWheelEl.addEventListener('pointerup', () => { wheelDragging = false; });
+  const endWheelDrag = () => { wheelDragging = false; };
+  hueWheelEl.addEventListener('pointerup', endWheelDrag);
+  hueWheelEl.addEventListener('pointercancel', endWheelDrag);
+  hueWheelEl.addEventListener('lostpointercapture', endWheelDrag);
 
   /* ── Score bar ───────────────────────────────────────── */
   const MECH_DEFS = [
@@ -1803,12 +1872,12 @@
     document.getElementById('ex-ok').textContent =
 `bg   oklch(${bOk.L.toFixed(3)} ${bOk.C.toFixed(4)} ${bOk.H.toFixed(1)})\nkey  oklch(${kOk.L.toFixed(3)} ${kOk.C.toFixed(4)} ${kOk.H.toFixed(1)})`;
 
-    exportModal.classList.add('open');
+    openDialog(exportModal, document.getElementById('export-close'));
   }
 
   document.getElementById('btn-export-open').addEventListener('click', openExport);
-  document.getElementById('export-close').addEventListener('click', () => exportModal.classList.remove('open'));
-  exportModal.addEventListener('click', e => { if (e.target === exportModal) exportModal.classList.remove('open'); });
+  document.getElementById('export-close').addEventListener('click', () => closeDialog(exportModal));
+  exportModal.addEventListener('click', e => { if (e.target === exportModal) closeDialog(exportModal); });
 
   document.getElementById('ex-css-copy').addEventListener('click', () => copyStr(document.getElementById('ex-css').textContent));
   document.getElementById('ex-tw-copy').addEventListener('click',  () => copyStr(document.getElementById('ex-tw').textContent));
